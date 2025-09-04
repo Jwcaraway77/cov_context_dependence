@@ -1,0 +1,33 @@
+https://cov-spectrum.org/
+
+using all samples from World at all times
+filtering mutations by 1%-100% proportion of sequences
+database = gisaid
+defining mutations are taken from nextstrain by clicking on the main node of each variant. *uses pango naming conventions
+
+* denotes entire clade not just the main branch
+B.1.1.7* = Alpha, 1207325 total sequences
+B.1.351* = Beta, 45218 total sequences
+B.1.617.2* = Delta, 4523792 total sequences
+21C = Epsilon, 76367 total sequences
+B.1.525* = Eta, 10103 total sequences
+P.1* = Gamma, 134095 total sequences
+B.1.526* = Iota, 46078 total sequences
+B.1.617.1* = Kappa, 7841 total sequences
+XBB.1.5* = Kraken, 401506 total sequences
+C.37* = Lambda, 11693 total sequences
+B.1.621* = Mu, 17480 total sequences
+B.1.1.529* = Omicron, 6641850 total sequences
+BA.2.86* = Pirola, 261496 total sequences
+hk.3* = hongkong, 40179 total sequences
+1* = transient, 348875 total sequences
+2* = dominant, 13035969 total sequences
+a* = jean_alpha, 1 total sequences
+b* = jean_beta, 1 total sequences
+d* = jean_delta, 1 total sequences
+g* = jean_gamma, 1 total sequences
+o* = jean_omicron, 1 total sequences
+0* = aggregate, 13425023 total sequences
+0* = all, 13425023 total sequences
+3* = jean_vars, 12552280 total sequences
+4* = testing, 13425023 total sequences
