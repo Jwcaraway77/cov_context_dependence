@@ -1316,7 +1316,7 @@ def normalize_threshold_mat_by_placed_and_matches(threshold_mat, mut_count):
 
 
 '''concatenate analysis output and calc t-tests between sim types'''
-def analyze_sims_from_server_3(variant_order, thresholds, contexts, analysis_threshold, analysis_variant, output_info):
+def analyze_sims_from_server(variant_order, thresholds, contexts, analysis_threshold, analysis_variant, output_info):
     
     #gene wide triplet counts for non-overlapping genes
     gwtc_dict = {gene[:-4]:pd.read_csv('sim_ref_data/fourfold_gwtc/triplets/'+gene, index_col=0, header=0) for gene in os.listdir('sim_ref_data/fourfold_gwtc/triplets') if gene[:-4]=='.csv'}
@@ -4460,7 +4460,7 @@ def main():
     simulation_type = ['global'] #gene_specific is deprecated
     contexts = ['blind_contexts', 'naive_contexts', 'full_contexts'] #blind = no contextual or resultant mutation info, naive = no contextual info, full = contextual and resultant mutation info
     #matching number of unique context mutations in 'all'
-    num_muts = {variant:10 for variant in sim_variants} #number of mutations to place per simulation
+    num_muts = {variant:1000 for variant in sim_variants} #number of mutations to place per simulation
     scalers = {'blind_contexts':.015, 'naive_contexts':.015, 'full_contexts':.25} #weighting of variant mutation matrices to increase or decrease number of runs per simulation needed to achieve x-number of mutations placed
 
     #create file structure
@@ -4500,61 +4500,18 @@ def main():
                             contexts=context_type, threshold=thresholds[0], scaler=scalers[context_type])
     
     #simulation analysis
-    #analyze_mutations_using_mut_dicts(['alpha','delta','all'], thresholds, '5e-05', 'alpha', contexts)
-    analyze_sims_from_server_3(variant_order=variant_order+pooled_variants[:-1], thresholds=thresholds, contexts=contexts, analysis_threshold=thresholds[0], analysis_variant=dataset, output_info=output_info)
+    analyze_sims_from_server(variant_order=variant_order+pooled_variants[:-1], thresholds=thresholds, contexts=contexts, analysis_threshold=thresholds[0], analysis_variant=dataset, output_info=output_info)
     analyze_sims_genes(thresholds, contexts, analysis_threshold=thresholds[0], analysis_variant=dataset, gene_dict=(subset_genes | nsp_positions | rdrp_sub_domains | spike_sub_domains), sim_folder='analysis_'+output_info, sim_output_flag=True)
-    #gen_sim_hist_2(gene='total', context_type='full_contexts', sim_folder='analysis_'+output_info)
-    #gen_sim_dft(gene='S', context_type='full_contexts', sim_folder='analysis_'+output_info)
-    #post_sims_analysis(analysis_variants=[re.search(r'\(\w+\)',variant_folder).group(0)[1:-1] for variant_folder in os.listdir('sim_ref_data') if 'clade' in variant_folder and 'jean' not in variant_folder and 'jf' not in variant_folder], thresholds=thresholds)
 
-    #wrangle analysis data into two dfs
-    #analyze_sims_from_server_2(variant_order=variant_order_aggregate, thresholds=thresholds, num_sims=num_sims, contexts=contexts, threshold_mat=True, t_test_mat=False, output_mut_mat=grouped_global_full, anova=True, reduced_output=False) #grouped_global_full or global_avg_subset_mat
-    #variant_mut_rates_2(global_avg_subset_mat, genes_avg_mat, variant_order, gene_order)
-    #viz_gwtc()
-    #calc_triplet_counts_post_sim(contexts, variant_order, thresholds, num_sims)
-    #compare_pirola(['BA.2.86(pirola)_full_clade_10_5_23', 'BA.2.86(pirola)_full_clade_1_17_24', 'BA.2.86(pirola)_full_clade_3_19_24'])
-    #compare_pirola_muts(['BA.2.86(pirola)_full_clade_10_5_23', 'BA.2.86(pirola)_full_clade_1_17_24', 'BA.2.86(pirola)_full_clade_3_19_24'])
-    #search_genome(global_avg_subset_mat, genes_avg_mat, 1000, variant_order, 2)
-    #gen_gene_sequences()
-    #plot_triplet_count(size=(12,4))
-    #spike_anova()
-    
-    #sim_result_hist([variant_order_aggregate[i] for i in unweighted_indices_lf1], '1e-20', show='all') #[variant_order_aggregate[i] for i in unweighted_indices_lf1]
-    #randomize_correlation_matrices(variant_order_aggregate)
-    #randomize_correlation_matrices_columns(variant_order_aggregate)
-    #spike_hist_t_tests()
     
     
     '''analyze variants and aggregates'''
-    #analyze_low_freq_muts(variant_order=variant_order_aggregate, t_1='1.5e-05', t_2='5e-05')
-    #global_avg_subset_mat, global_naive_subset_mat, global_blind_subset_mat = read_thresholded_global_mat('0.5', variant_order_aggregate)
-    #global_avg_subset_mat, global_naive_subset_mat = read_thresholded_global_mat('low_freq', variant_order_aggregate)
-    #'omicron','kraken','pirola','delta','epsilon','gamma','aggregate','iota','alpha','beta' #'pirola','gamma','kraken','delta','omicron','alpha','beta','aggregate','epsilon','iota' #'omicron','delta','alpha','gamma','aggregate','beta','pirola','iota','epsilon','kraken'
-    #corr_df, pvalue_df = correlate_variants(global_avg_subset_mat, variant_order=variant_order_aggregate, extra_variants=False, var_corr_order=['all','persistent','delta','alpha','pirola','omicron','transient','kraken'], vmin=.001, vmax=1) #'alpha','omicron','aggregate','delta','pirola','kraken'
-    #variant_order_transients = ['beta','epsilon','eta','gamma','iota','kappa','lambda','mu']
-    #global_avg_subset_mat_transients, global_naive_subset_mat_transients, global_blind_subset_mat_transients = read_thresholded_global_mat('5e-05', variant_order_transients)
-    #corr_df, pvalue_df = correlate_variants(global_avg_subset_mat_transients, variant_order=variant_order_transients, extra_variants=False, var_corr_order=['beta','gamma','lambda','mu','epsilon','iota','kappa','eta'], vmin=.001, vmax=1)
-    #corr_df.to_csv('simulation_output/final_info/final_tables/supp_tables/5e-5_full_corr_transients.csv')
-    #pvalue_df.to_csv('simulation_output/final_info/final_tables/supp_tables/5e-5_full_p_values_transients.csv')
-    #plot_variants_grid(global_avg_subset_mat, global_naive_subset_mat, variant_order_aggregate, shape='3_vars', threshold='5e-5') #8_vars or dynamic_aggregate
-    
-    #real_vaccine_correlation([read_thresholded_global_mat('1.5e-05', variant_order_aggregate)[0],read_thresholded_global_mat('low_freq', variant_order_aggregate)[0],read_thresholded_global_mat('5e-05', variant_order_aggregate)[0]], [variant_order_aggregate,variant_order_aggregate,variant_order_aggregate])
-
-    #convert_jean_dataset()
-    #variant_order_aggregate = ['jean_alpha','jean_beta','jean_delta','jean_gamma','jean_omicron','jean_usa','jean_total']
-    #gen_gwtc_jean(pd.Series([*get_fasta()[:-1]], name='ref'), rows, columns_shortened)
-    #variant_order_aggregate = ['jean_alpha']
-      
-    #parse_reference_mutations(thresholds=['5e-05', '5e-04', .005, .05, .5], variant_order=variant_order_aggregate, jean_toggle='weighted')
-    #analyze_low_freq_muts(variant_order=variant_order_aggregate, t_1='5e-05', t_2='5e-04')
-    #global_avg_subset_mat, global_naive_subset_mat = read_thresholded_global_mat('0', variant_order_aggregate)
-    #correlate_variants(global_avg_subset_mat, variant_order=[label.split('_')[-1] for label in variant_order_aggregate], extra_variants=False, var_corr_order=['alpha','beta','delta','gamma','omicron','usa','total'], vmin=.3, vmax=1) # #['alpha','aggregate','gamma','omicron','pirola','delta','kraken']
-    #plot_variants_grid(global_avg_subset_mat, global_naive_subset_mat, variant_order_aggregate, shape='aggregate', threshold='jean_weighted')
-    
-
-
-
-
+    #correlate context-dependent matrices between variants
+    corr_df, pvalue_df = correlate_variants(global_avg_subset_mat, variant_order=persistent_variants+pooled_variants[:-1], extra_variants=False, var_corr_order=['all','persistent','delta','alpha','pirola','omicron','transient','kraken'], vmin=.001, vmax=1)
+    corr_df.to_csv('simulation_output/final_info/final_tables/supp_tables/5e-5_full_corr_transients.csv')
+    pvalue_df.to_csv('simulation_output/final_info/final_tables/supp_tables/5e-5_full_p_values_transients.csv')
+    #plot context-dependent matrices
+    plot_variants_grid(global_avg_subset_mat, global_naive_subset_mat, persistent_variants+pooled_variants[:-1], shape='3_vars', threshold='5e-5')
 
 
     '''call 1-off functions'''
