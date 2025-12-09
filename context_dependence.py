@@ -37,6 +37,8 @@ def calc_fourfold_positions_for_subset_genes(subset_genes, fourfold_positions):
     total_triplet_counts = pd.DataFrame(np.zeros([12,4]), index=rows, columns=columns_shortened)
     genome_valid_fourfold_positions = np.array([])
     #output directories
+    if not os.path.exists('sim_ref_data/4fold'):
+        os.mkdir('sim_ref_data/4fold')
     if not os.path.exists('sim_ref_data/4fold/gwtc'):
         os.mkdir('sim_ref_data/4fold/gwtc')
     if not os.path.exists('sim_ref_data/4fold/gwtc/valid_fourfold_positions'):
@@ -164,7 +166,7 @@ def convert_reference_mutation_list_to_figure(variant, threshold):
     var_folder = [folder for folder in os.listdir('sim_ref_data/') if '('+variant+')' in folder][0]
     ref_mut_list = pd.read_csv('sim_ref_data/'+var_folder+'/reference_mutations/'+str(threshold)+'_reference_mutations.csv', index_col=0, header=0)
 
-    if not 'jean' in variant:
+    if not 'mut' in variant:
         #read in total genome triplet counts
         total_triplet_counts = pd.read_csv('sim_ref_data/4fold/gwtc/triplets/total.csv', index_col=0, header=0)
 
@@ -179,17 +181,14 @@ def convert_reference_mutation_list_to_figure(variant, threshold):
 
     else:
         #read in total genome triplet counts
-        total_triplet_counts = pd.read_csv('sim_ref_data/4fold/contexts/jean_total.csv', index_col=0, header=0)
+        total_triplet_counts = pd.read_csv('sim_ref_data/4fold/contexts/mut_total.csv', index_col=0, header=0)
         if total_triplet_counts.shape[0]>12:
             total_triplet_counts.drop(['A[X-->Y]T','A[X-->Y]G','A[X-->Y]C','A[X-->Y]A'], axis=0, inplace=True)
-        '''for index in total_triplet_counts.index:
-            for col in total_triplet_counts.columns:
-                total_triplet_counts.loc[index,col] = 1'''
         mut_counts = pd.DataFrame(np.zeros([12,12]), index=rows, columns=columns)
 
     var_matrix = pd.DataFrame(np.zeros([12,12]), index=rows, columns=columns)
     mut_count = 0
-    #jean testing dict
+    #mut testing dict
     #testing_dict = {row:{column:[] for column in columns} for row in rows}
     for index in ref_mut_list.index.values:
         #position,old,mut,combined
@@ -197,13 +196,13 @@ def convert_reference_mutation_list_to_figure(variant, threshold):
         #print(row)
         triplet = fasta.loc[row.loc['position']-2:row.loc['position']].values #indexed -1 to match fasta
         #default to counting each mutation as 1 individual mutation (don't have consecutive sequence info)
-        if not 'jean' in variant:
+        if not 'mut' in variant:
             var_matrix.loc[triplet[0]+'[X>Y]'+triplet[2], row.loc['old']+'>'+row.loc['mut']] += 1
         else:
-            #check if valid mutation for jean dataset (we can't use A[X>Y]N)
+            #check if valid mutation for mut dataset (we can't use A[X>Y]N)
             if triplet[0]+'[X>Y]'+triplet[2] in var_matrix.index.to_numpy():
                 #calc based on frequencies
-                if jean_toggle == 'weighted':
+                if mut_toggle == 'weighted':
                     var_matrix.loc[triplet[0]+'[X>Y]'+triplet[2], row.loc['old']+'>'+row.loc['mut']] += row.loc['proportion']
                     #testing_dict[triplet[0]+'[X>Y]'+triplet[2]][row.loc['old']+'>'+row.loc['mut']].append(float(row.loc['proportion']))
                     mut_counts.loc[triplet[0]+'[X>Y]'+triplet[2], row.loc['old']+'>'+row.loc['mut']] += 1
@@ -211,7 +210,7 @@ def convert_reference_mutation_list_to_figure(variant, threshold):
                 else:
                     var_matrix.loc[triplet[0]+'[X>Y]'+triplet[2], row.loc['old']+'>'+row.loc['mut']] += 1
         mut_count+=1
-    #jean testing stuff
+    #mut testing stuff
     '''max_length = np.max([[len(testing_dict[row][column]) for column in testing_dict[row].keys()] for row in testing_dict.keys()])
     empty_arr = np.empty([144,max_length])
     empty_arr.fill(np.nan)
@@ -229,7 +228,7 @@ def convert_reference_mutation_list_to_figure(variant, threshold):
         sum_col.loc[row_index] /= total_triplet_counts.loc[row_index[0],row_index[1][0]]
     #normalize sum col by triplet count
     testing_df = pd.concat([sum_col, testing_df], axis=1)
-    testing_df.to_csv('simulation_output/jean_figs/tensors/'+variant+'_'+str(threshold)+'.csv')'''
+    testing_df.to_csv('simulation_output/mut_figs/tensors/'+variant+'_'+str(threshold)+'.csv')'''
 
     if not os.path.exists('simulation_output/final_info/variant_mut_count_mats_4fold'):
         os.mkdir('simulation_output/final_info/variant_mut_count_mats_4fold')
@@ -238,9 +237,6 @@ def convert_reference_mutation_list_to_figure(variant, threshold):
     var_matrix.to_csv('simulation_output/final_info/variant_mut_count_mats_4fold/'+str(threshold)+'/'+variant+'_mut_counts.csv')
     
     #normalize by 4fold triplet counts
-    #if jean_toggle == 'unweighted' or 'jean' not in variant:
-    if jean_toggle == 'weighted':
-        var_matrix /= mut_counts
     for column in var_matrix.columns.values:
         var_matrix.loc[:,column] = var_matrix.loc[:,column].to_numpy() / total_triplet_counts.loc[:,column[0]].to_numpy()
     return var_matrix, mut_count
@@ -296,10 +292,10 @@ def gen_context_dependent_info(dataset='population', variant_order=[], gene_dict
     gen_pooled_variant(variants=['alpha','beta','delta','epsilon','eta','iota','hongkong','gamma','kappa','kraken','lambda','mu','omicron','pirola'], variant_name='0(all)') #all variants
     gen_pooled_variant(variants=['beta','epsilon','eta','iota','gamma','kappa','lambda','mu'], variant_name='1(transient)', num_req_vars=3) #transient variants without hk
     gen_pooled_variant(variants=['alpha','delta','kraken','omicron','pirola'], variant_name='2(persistent)') #persistent variants
-    gen_pooled_variant(variants=['alpha','beta','delta','omicron','gamma'], variant_name='3(mut_vars)') #direct comparison to jean_total
-    pooled_variants = ['all','transient','persistent','mut_vars']
+    gen_pooled_variant(variants=['alpha','beta','delta','omicron','gamma'], variant_name='3(naive)') #direct comparison to mut_total
+    pooled_variants = ['all','transient','persistent','naive']
     '''reformat and subset mutation data for variants'''
-    for variant in variant_order:
+    for variant in variant_order+['all','transient','persistent','naive']:
         collapse_mutation_list(variant)
         for threshold in thresholds:
             threshold_reference_mutations(variant, threshold)

@@ -149,7 +149,7 @@ def simulate_mutations_5(sim_type, global_fourfold, genes_fourfold, mut_count, c
                     cumsum = np.cumsum(global_mut_rate_mat.loc[prev_nuc_temp+'[X>Y]'+next_nuc_temp,possible_mut_labels].values)
                     #print('intron')
             
-            if contexts == 'blind_contexts':
+            if contexts == 'naive_contexts':
                 cumsum = np.asarray([cumsum[-1]/3, cumsum[-1]*2/3, cumsum[-1]]) #reformat cumsum to give even weighting to all resulting mutations
 
             #random number to determine which mut if any is chosen
@@ -246,10 +246,10 @@ def simulate_mutations_6(mut_mat, mut_count, contexts, scaler=1):
         elif mut_mat.shape[0] == 16: #16x12 matrix has info on A[X>Y]N mutations
             mut_mat = pd.DataFrame(mut_mat, index=rows+a_context_labels[1:], columns=columns)
         #mut_mat = (mut_mat / np.sum(mut_mat.values)) #normalize
-    elif contexts == 'naive_contexts':
+    elif contexts == 'tstv_contexts':
         mut_mat = pd.DataFrame(torch.reshape(mut_mat, [1,12]), index=['N[X>Y]N'], columns=columns)
         #mut_mat = (mut_mat / np.sum(mut_mat.values)) * (scaler / 12) #normalize mat and scaler by number of rows in default matrix
-    elif contexts == 'blind_contexts':
+    elif contexts == 'naive_contexts':
         mut_mat = pd.DataFrame(torch.reshape(mut_mat, [1,4]), index=['N[X>Y]N'], columns=columns_shortened)
         #mut_mat = (mut_mat / np.sum(mut_mat.values)) * (scaler / 12 / 3) #normalize mat and scaler by number of rows and columns in default matrix
     mut_mat = (mut_mat / np.sum(mut_mat.values)) * scaler #normalize
@@ -261,7 +261,7 @@ def simulate_mutations_6(mut_mat, mut_count, contexts, scaler=1):
         column_sums = {}
         for column in columns_shortened:
             #calc cumulative sum of rates for triplet and possible mutations
-            if contexts == 'blind_contexts':
+            if contexts == 'naive_contexts':
                 column_sums[column] = np.cumsum(mut_mat.loc[row, [column,column,column]].values) / 3 #normalize between possible results
             else:
                 column_sums[column] = np.cumsum(mut_mat.loc[row, mut_labels[column]].values)
@@ -443,10 +443,10 @@ def init_sim(variant, num_sims, num_muts, mut_mat, contexts='full_contexts', thr
     #create file structure
     if not os.path.exists('simulation_output/'+sim_type+'/full_contexts'):
         os.mkdir('simulation_output/'+sim_type+'/full_contexts')
+    if not os.path.exists('simulation_output/'+sim_type+'/tstv_contexts'):
+        os.mkdir('simulation_output/'+sim_type+'/tstv_contexts')
     if not os.path.exists('simulation_output/'+sim_type+'/naive_contexts'):
         os.mkdir('simulation_output/'+sim_type+'/naive_contexts')
-    if not os.path.exists('simulation_output/'+sim_type+'/blind_contexts'):
-        os.mkdir('simulation_output/'+sim_type+'/blind_contexts')
 
     base_folder = 'simulation_output/'+sim_type+'/'+contexts+'/'
     #don't overwrite finished runs
@@ -477,28 +477,7 @@ def init_sim(variant, num_sims, num_muts, mut_mat, contexts='full_contexts', thr
         '''if contexts:
             triplet_counts.to_csv('simulation_output/'+sim_type+'/full_contexts/'+variant+'/triplet_counts/'+'tc_'+str(sim_run)+'.csv')
         else:
-            triplet_counts.to_csv('simulation_output/'+sim_type+'/naive_contexts/'+variant+'/triplet_counts/'+'tc_'+str(sim_run)+'.csv')'''
-
-'''compare simulation fasta output to reference generated from possible mutations (from cov-spectrum)'''
-def compare_to_reference_deprecated(variant, sim_type, contexts, threshold):
-    #read in reference fasta
-    variant_folder = [folder for folder in os.listdir('sim_ref_data') if re.search(r'\('+variant+'\)', folder)][0]
-    ref_fasta = pd.read_csv('sim_ref_data/'+variant_folder+'/mutated_fastas/'+str(threshold)+'_mutated.fasta', header=0, index_col=0)
-    '''if contexts:
-        contexts = 'full_contexts'
-    else:
-        contexts = 'naive_contexts'
-    '''
-
-    for fasta_num, sim_fasta in enumerate(os.listdir('simulation_output/'+sim_type+'/'+contexts+'/'+variant+'/fastas/'+str(threshold))):
-        with open('simulation_output/'+sim_type+'/'+contexts+'/'+variant+'/fastas/'+str(threshold)+'/'+sim_fasta, 'r') as f:
-            lines = f.readlines()
-        sim_fasta = lines[1]
-        if not os.path.exists('simulation_output/'+sim_type+'/'+contexts+'/'+variant+'/analysis'):
-            os.mkdir('simulation_output/'+sim_type+'/'+contexts+'/'+variant+'/analysis')
-        if not os.path.exists('simulation_output/'+sim_type+'/'+contexts+'/'+variant+'/analysis/'+str(threshold)):
-            os.mkdir('simulation_output/'+sim_type+'/'+contexts+'/'+variant+'/analysis/'+str(threshold))
-        compare_fastas_2(ref_fasta, sim_fasta, 'simulation_output/'+sim_type+'/'+contexts+'/'+variant+'/analysis/'+str(threshold)+'/'+str(fasta_num))
+            triplet_counts.to_csv('simulation_output/'+sim_type+'/tstv_contexts/'+variant+'/triplet_counts/'+'tc_'+str(sim_run)+'.csv')'''
 
 '''generate heatmap comparing variant contexts'''  
 def variant_mut_rates_2(global_subset_avg, genes_avg, variant_order, gene_order):
@@ -645,76 +624,29 @@ def read_mut_ref_data_2(variant):
 
 
 '''plot all variant mut rates'''
-def plot_variant_mut_rates(genes_avg_mat, global_avg_subset_mat, genes_naive_mat, global_naive_subset_mat, variant_order, gene_order):
-    for genes_mat_index, big_mat in enumerate([genes_avg_mat, genes_naive_mat]):
+def plot_variant_mut_rates(genes_avg_mat, global_avg_subset_mat, genes_tstv_mat, global_tstv_subset_mat, variant_order, gene_order):
+    for genes_mat_index, big_mat in enumerate([genes_avg_mat, genes_tstv_mat]):
         for variant_index in range(big_mat.shape[0]):
             if genes_mat_index == 0:
                 mat_type = 'full_contexts'
             else:
-                mat_type = 'naive_contexts'
+                mat_type = 'tstv_contexts'
             path = 'sim_ref_data/mut_rates/'+variant_order[variant_index]+'/'+mat_type+'_genes.png'
             plot_mut_mat(variant_mat=big_mat[variant_index], path=path, gene_order=gene_order, data_type='genes', contexts=mat_type)
-    for global_mat_index, global_mat in enumerate([global_avg_subset_mat, global_naive_subset_mat]):
+    for global_mat_index, global_mat in enumerate([global_avg_subset_mat, global_tstv_subset_mat]):
         for variant_index in range(global_mat.shape[0]):
             if global_mat_index == 0:
                 mat_type = 'full_contexts'
             else:
-                mat_type = 'naive_contexts'
+                mat_type = 'tstv_contexts'
             path = 'sim_ref_data/mut_rates/'+variant_order[variant_index]+'/'+mat_type+'_global.png'
             plot_mut_mat(variant_mat=global_mat[variant_index], path=path, gene_order=gene_order, data_type='global', contexts=mat_type)
-
-'''plot a mutation matrix to path'''
-def plot_mut_mat(variant_mat, path, gene_order, data_type, contexts, include_a=False, vmin=0, vmax=1, annot=False):
-    #potential shapes: 15x16x12 = genes full mat, 15x12 = genes naive mat, 16x12 = global full mat, 12 = global naive mat
-    print('generating ' + path)
-    print(variant_mat.shape)
-    if 'full' in contexts:
-        rows_temp = rows_figs
-    else:
-        rows_temp = ['N[X>Y]N']
-    cols_temp = columns_figs
-    if data_type == 'genes':
-        fig, axs = plt.subplots(figsize=(8,45), nrows=variant_mat.shape[0])
-        for gene in range(variant_mat.shape[0]):
-            if contexts == 'super_naive_contexts':
-                sns.heatmap(torch.unsqueeze(variant_mat[gene],0), cmap='Greys', ax=axs[gene], vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
-                axs[gene].set_xticklabels(labels=columns_shortened_figs)
-                axs[gene].set_yticklabels(labels=rows_temp, rotation='horizontal')
-            elif contexts == 'naive_contexts':
-                fig.set_size_inches(8,16)
-                sns.heatmap(torch.unsqueeze(variant_mat[gene],0), cmap='Greys', ax=axs[gene], xticklabels=cols_temp, yticklabels=rows_temp, vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
-                axs[gene].set_yticklabels(labels=rows_temp, rotation='horizontal')
-            elif include_a == False:
-                sns.heatmap(variant_mat[gene,:12,:], cmap='Greys', ax=axs[gene], xticklabels=cols_temp, yticklabels=rows_temp[:12], vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
-            else:
-                sns.heatmap(variant_mat[gene], cmap='Greys', ax=axs[gene], xticklabels=cols_temp, yticklabels=rows_temp, vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
-            axs[gene].set_title(gene_order[gene])
-    elif data_type == 'global':
-        if contexts == 'super_naive_contexts':
-            fig, axs = plt.subplots(figsize=(4,1.3), dpi=200, layout='tight')
-            sns.heatmap(torch.unsqueeze(variant_mat,0), cmap='Greys', ax=axs, vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
-            axs.set_xticklabels(labels=columns_shortened_figs)
-            axs.set_yticklabels(labels=rows_temp, rotation='horizontal')
-        elif contexts == 'naive_contexts':
-            fig, axs = plt.subplots(figsize=(8,1.3), dpi=200, layout='tight')
-            sns.heatmap(torch.unsqueeze(variant_mat,0), cmap='Greys', ax=axs, xticklabels=cols_temp, yticklabels=rows_temp, vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
-            axs.set_yticklabels(labels=rows_temp, rotation='horizontal')
-        elif include_a == False:
-            fig, axs = plt.subplots(figsize=(8,7))
-            sns.heatmap(variant_mat[:12,:], cmap='Greys', ax=axs, xticklabels=cols_temp, yticklabels=rows_temp[:12], vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
-        else:
-            fig, axs = plt.subplots(figsize=(8,7))
-            sns.heatmap(variant_mat, cmap='Greys', ax=axs, xticklabels=cols_temp, yticklabels=rows_temp, vmin=vmin, vmax=vmax, linewidth=.5, linecolor='gray')
-        axs.set_title('global subset rates')
-    plt.tight_layout()
-    plt.savefig(path)
-    plt.close()
 
 
 '''vizualize gwtc counts for genes and genome'''
 def viz_gwtc():
     #read in gwtc data
-    path = 'sim_ref_data/fourfold_gwtc/triplets/'
+    path = 'sim_ref_data/4fold/gwtc/triplets/'
     gene_df_dict = {}
     for gene in gene_info.keys():
         gene_df_dict[gene] = pd.read_csv(path+gene+'.csv', header=0, index_col=0)
@@ -792,12 +724,12 @@ def read_global_mut_rates(regions):
         #print(global_rate_tensor.shape)
 
 
-    #naive contexts
-    genes_naive_mat = torch.mean(total_tensor, dim=(1))
-    global_naive_subset_mat = torch.mean(global_rate_tensor, dim=(0))
+    #tstv contexts
+    genes_tstv_mat = torch.mean(total_tensor, dim=(1))
+    global_tstv_subset_mat = torch.mean(global_rate_tensor, dim=(0))
 
     print(total_tensor.shape, variant_order, gene_order)
-    return total_tensor, global_rate_tensor, genes_naive_mat, global_naive_subset_mat, variant_order, gene_order
+    return total_tensor, global_rate_tensor, genes_tstv_mat, global_tstv_subset_mat, variant_order, gene_order
 
 #read through mut_dicts for simulation and calculate positional and contextual matches
 def analyze_mutations_using_mut_dicts(variant_order, thresholds, analysis_threshold, analysis_variant, contexts, output_info):
@@ -905,12 +837,13 @@ def analyze_mutations_using_mut_dicts(variant_order, thresholds, analysis_thresh
     torch.save(positional_tensor, 'simulation_output/global/analysis_'+output_info+'/positional_tensor.pt')
     torch.save(contextual_tensor, 'simulation_output/global/analysis_'+output_info+'/contextual_tensor.pt')
     print(positional_tensor.shape, contextual_tensor.shape)
+
 '''concatenate all analysis output for simulation_output'''
 def analyze_sims_from_server(variant_order, thresholds, num_sims):
     broken_sims = {threshold:[] for threshold in thresholds}
     averaged_mats = {}
     for sim_type in ['gene_specific', 'global']:
-        for context_type in ['full_contexts', 'naive_contexts', 'blind_contexts']:
+        for context_type in ['full_contexts', 'tstv_contexts', 'naive_contexts']:
             for variant in variant_order:
                 for threshold in thresholds:
                     averaged_analysis = pd.DataFrame(np.zeros([17,13]), index=rows+['A[X>Y]T','A[X>Y]G','A[X>Y]C','A[X>Y]A','0'], columns=columns+['0'])
@@ -931,7 +864,7 @@ def analyze_sims_from_server(variant_order, thresholds, num_sims):
     '''df = pd.DataFrame(np.zeros([5,1]), index=[0.001, 0.01, 0.1, 0.2, 0.5], columns=['a'])
     for variant in variant_order:
         for sim_type in ['gene_specific', 'global']:
-            for context_type in ['full_contexts', 'naive_contexts']:
+            for context_type in ['full_contexts', 'tstv_contexts']:
                 var_series = pd.Series(np.zeros([5]), index=[0.001, 0.01, 0.1, 0.2, 0.5], name=variant+'_'+sim_type+'_'+context_type)
                 for threshold in thresholds:
                     #print([key for key in averaged_mats.keys() if variant in key and str(threshold) in key and sim_type in key and context_type in key])
@@ -947,10 +880,10 @@ def analyze_sims_from_server(variant_order, thresholds, num_sims):
         for variant in variant_order:
             threshold_variant_df = pd.Series(name=variant, dtype=float)
             for sim_type in ['global', 'gene_specific']:
-                for context_type in ['blind','naive', 'full']:
+                for context_type in ['naive','tstv', 'full']:
                     current_mat = averaged_mats[[key for key in averaged_mats.keys() if sim_type in key and context_type in key and '/'+variant in key and str(threshold) in key][0]]
                     position_context_matches = pd.Series([current_mat.loc['0','0'], np.sum(current_mat.iloc[:12,:12].values)], index=['position', 'context'])
-                    #print(variant, global_naive)
+                    #print(variant, global_tstv)
                     threshold_variant_df = pd.concat([threshold_variant_df, position_context_matches], axis=0)
             #print(threshold_variant_df)
             threshold_variant_df = threshold_variant_df.to_frame()
@@ -961,7 +894,7 @@ def analyze_sims_from_server(variant_order, thresholds, num_sims):
     print(multiindex_cols)
     threshold_comp_mat.columns = multiindex_cols
     #threshold_comp_mat = threshold_comp_mat.iloc[[],:]
-    multiindex_rows = pd.MultiIndex.from_arrays([['global','global','global','global','global','global','gene','gene','gene','gene','gene','gene'],['blind','blind','naive','naive','full','full','blind','blind','naive','naive','full','full']])
+    multiindex_rows = pd.MultiIndex.from_arrays([['global','global','global','global','global','global','gene','gene','gene','gene','gene','gene'],['naive','naive','tstv','tstv','full','full','naive','naive','tstv','tstv','full','full']])
     threshold_comp_mat.index = multiindex_rows
     print(threshold_comp_mat)
     print(threshold_comp_mat.loc[:,[(.001,'alpha'), (.01, 'alpha'), (.1, 'alpha')]])
@@ -971,318 +904,6 @@ def analyze_sims_from_server(variant_order, thresholds, num_sims):
         threshold_comp_mat_2 = pd.concat([threshold_comp_mat_2, threshold_comp_mat.loc[:,[(.001,variant), (.01, variant), (.1, variant)]]], axis=1)
     threshold_comp_mat_2.to_csv('simulation_output/comp_by_threshold.csv')
 
-'''concatenate analysis output and calc t-tests between sim types'''
-def analyze_sims_from_server_2_deprecated(variant_order, thresholds, num_sims, contexts, threshold_mat=True, t_test_mat=True, output_mut_mat=None, anova=False, reduced_output=False):
-    global rows, columns
-
-    if output_mut_mat != None:
-        #gwtc
-        gwtc_list = [pd.read_csv('sim_ref_data/fourfold_gwtc/'+gene+'.csv', index_col=0, header=0) for gene in ['S','E','M','N','ORF1ab','ORF3a','ORF6','ORF7a','ORF7b','ORF8','ORF10']]
-        for gwtc_mat in gwtc_list[1:]:
-            gwtc_list[0] += gwtc_mat
-        gwtc_mat = gwtc_list[0]
-        gwtc_mat = gwtc_mat.iloc[:12,[0,0,0,1,1,1,2,2,2,3,3,3]]
-        gwtc_mat.columns = columns
-
-    broken_sims = {threshold:[] for threshold in thresholds} #track if any analysis files are missing or invalid
-    positional_context_dict = {} #stores a list for each sim type combination of positional and contextual matches
-    t_tests = {} #stores t-statistic and pvalue dataframes for each sim type combination
-    averaged_mats_correlation = {} #stores correlation between averaged post-sim mut rate mat and pre-sim mut rate mat
-    sim_mats_correlation = {} #stores correlation between averaged sim mut rate mat and pre-sim mut rate mat
-    contextual_dist_dict = {}
-    #loop through sim type combinations
-    for threshold in thresholds:
-        print(threshold)
-        for variant in variant_order:
-            #print(variant)
-            variant_threshold_dict = {} #stores mean contextual matches per sim
-            for sim_type in ['gene_specific', 'global']:
-                #print(sim_type)
-                for context_type in contexts:
-                    #print(context_type)
-                    threshold_tensor = [] #stores each sim in sim_num for this sim type
-                    for sim_run in range(num_sims):
-                        try:
-                            #read in sim data
-                            sim_tensor = torch.tensor(pd.read_csv('simulation_output/'+sim_type+'/'+context_type+'/'+variant+'/analysis/'+str(threshold)+'/'+str(sim_run)+'_matching_muts_contexts.csv', header=0, index_col=0).values)
-                            #store all sim runs for this type
-                            threshold_tensor.append(sim_tensor)
-                            #calc contextual matches for run
-                            #contextual matches = sum of context matches excluding A[X>Y]N mutations
-                            if sim_type + '_' + context_type not in variant_threshold_dict.keys():
-                                variant_threshold_dict[sim_type+'_'+context_type] = [torch.sum(sim_tensor[:-5,:-1]).item()]
-                            else:
-                                variant_threshold_dict[sim_type+'_'+context_type].append(torch.sum(sim_tensor[:-5,:-1]).item())
-                    
-                        except:
-                            broken_sims[threshold].append('simulation_output/'+sim_type+'/'+context_type+'/'+variant+'/analysis/')
-                            break
-                        
-                    #convert list to tensor
-                    threshold_tensor = torch.stack(threshold_tensor)
-                    #average positional matches across sim runs
-                    positional_matches_mean = torch.mean(threshold_tensor[:,-1,-1], dim=(0)).item()
-                    #average contextual matches across sim runs
-                    #contextual matches = sum of context matches excluding A[X>Y]N mutations
-                    contextual_matches_mean = np.mean(variant_threshold_dict[sim_type+'_'+context_type]).item()
-                    #store positional and contextual means
-                    positional_context_dict['simulation_output/'+sim_type+'/'+context_type+'/'+variant+'/analysis/'+str(threshold)] = [positional_matches_mean, contextual_matches_mean]
-                    pd.DataFrame([positional_matches_mean, contextual_matches_mean], index=['positional_matches', 'contextual_matches']).to_csv('simulation_output/'+sim_type+'/'+context_type+'/'+variant+'/analysis/'+str(threshold)+'/positional_context_matches.csv')
-                    if output_mut_mat != None:
-                        #contextual matches
-                        averaged_mat = torch.mean(threshold_tensor[:,:12,:12], dim=(0))
-                        if output_mut_mat.shape[0] == 12:
-                            corr = torch.corrcoef(torch.stack([averaged_mat.flatten(), output_mut_mat.flatten()])).numpy()[0,1]
-                        else:
-                            corr = torch.corrcoef(torch.stack([averaged_mat.flatten(), output_mut_mat[variant_order.index(variant)].flatten()])).numpy()[0,1]
-                        t_stat = corr * np.sqrt((144-2)/(1-(corr**2)))
-                        #t_stat = corr / (np.sqrt((1 - (corr**2)) / (144-2)))
-                        averaged_mats_correlation['simulation_output/'+sim_type+'/'+context_type+'/'+variant+'/analysis/'+str(threshold)] = [corr,t_stat]
-                        pd.DataFrame(averaged_mat, index=rows, columns=columns).to_csv('simulation_output/'+sim_type+'/'+context_type+'/'+variant+'/analysis/'+str(threshold)+'/averaged_context_matches.csv')
-                        
-                        #look at all mutations placed
-                        averaged_mat = pd.read_csv('simulation_output/'+sim_type+'/'+context_type+'/'+variant+'/analysis/'+str(threshold)+'/sim_mut_rate.csv', index_col=0, header=0).iloc[:12,:]
-                        #averaged_mat = averaged_mat / gwtc_mat / num_sims
-                        averaged_mat = torch.tensor(averaged_mat.iloc[:12,:].values)
-                        
-                        if output_mut_mat.shape[0] == 12:
-                            corr = torch.corrcoef(torch.stack([averaged_mat.flatten(), output_mut_mat.flatten()])).numpy()[0,1]
-                        else:
-                            corr = torch.corrcoef(torch.stack([averaged_mat.flatten(), output_mut_mat[variant_order.index(variant)].flatten()])).numpy()[0,1]
-                        t_stat = corr * np.sqrt((144-2)/(1-(corr**2)))
-                        #t_stat = corr / (np.sqrt((1 - (corr**2)) / (144-2)))
-                        sim_mats_correlation['simulation_output/'+sim_type+'/'+context_type+'/'+variant+'/analysis/'+str(threshold)] = [corr,t_stat]
-
-            if anova == True:
-                contextual_dist_dict[str(threshold)+'/'+variant] = zip(variant_threshold_dict.keys(), variant_threshold_dict.values())
-
-            if t_test_mat == True:
-                #t-test between each type of sim for contextual matches to see if distributions are different
-                t_statistics = pd.DataFrame(np.zeros([len(variant_threshold_dict.keys()),len(variant_threshold_dict.keys())]), index=variant_threshold_dict.keys(), columns=variant_threshold_dict.keys())
-                p_values = t_statistics.copy()
-                #loop through each sim type
-                print(str(threshold), variant)
-                for first_sim_index, first_sim in variant_threshold_dict.items():
-                    for second_sim_index, second_sim in variant_threshold_dict.items():
-                        print(first_sim_index, second_sim_index)
-                        if first_sim_index != second_sim_index:
-                            #test that both distributions are normal
-                            #test first_sim dist
-                            first_sim_pvalue = stats.normaltest(first_sim).pvalue
-                            #test second_sim dist
-                            second_sim_pvalue = stats.normaltest(second_sim).pvalue
-
-                            #if normal dists, normal t-test
-                            if first_sim_pvalue <0.05 and second_sim_pvalue < 0.05:
-                                t_result = stats.ttest_ind(first_sim, second_sim, equal_var=True, alternative='greater')
-                            #else welch's t-test
-                            else:
-                                t_result = stats.ttest_ind(first_sim, second_sim, equal_var=False, alternative='greater')
-                            t_statistics.loc[first_sim_index, second_sim_index] = t_result.statistic
-                            p_values.loc[first_sim_index, second_sim_index] = t_result.pvalue
-                t_tests[str(threshold)+'_'+variant] = [t_statistics, p_values]
-    
-    print('broken_sims: ', broken_sims)
-    
-    if t_test_mat == True:
-        #convert t-tests dict to df
-        t_tests_df = pd.concat([pd.concat([t_tests[key][0], t_tests[key][1]], axis=0) for key in t_tests.keys()], axis=1)
-        multiindex_cols = pd.MultiIndex.from_product([thresholds, variant_order, variant_threshold_dict.keys()], names=['threshold', 'variant', 'sim_type'])
-        t_tests_df.columns = multiindex_cols
-        t_tests_df.to_csv('simulation_output/t_tests.csv')
-
-    if threshold_mat == True:
-        #convert positional_context_dict to df
-        '''threshold_comp_mat = pd.DataFrame(dtype=float)
-        for threshold in thresholds:
-            #variant_comp_mat = pd.DataFrame(dtype=float)
-            for variant in variant_order:
-                threshold_variant_df = pd.Series(name=variant, dtype=float)
-                for sim_type in ['global', 'gene_specific']:
-                    for context_type in [context.split('_')[0] for context in contexts]:
-                        current_mat = positional_context_dict[[key for key in positional_context_dict.keys() if sim_type in key and context_type in key and '/'+variant in key and str(threshold) in key][0]]
-                        position_context_matches = pd.Series(current_mat, index=['position', 'context'])
-                        threshold_variant_df = pd.concat([threshold_variant_df, position_context_matches], axis=0)
-                threshold_variant_df = threshold_variant_df.to_frame()
-                threshold_variant_df.columns = [variant+'_'+str(threshold)]
-                threshold_comp_mat = pd.concat([threshold_comp_mat, threshold_variant_df], axis=1)
-        #update formatting of df for legibility
-        multiindex_cols = pd.MultiIndex.from_product([thresholds, variant_order], names=['threshold', 'variant'])
-        threshold_comp_mat.columns = multiindex_cols
-        #multiindex_rows = pd.MultiIndex.from_arrays([['global','global','global','global','global','global','gene','gene','gene','gene','gene','gene'],['blind','blind','naive','naive','full','full','blind','blind','naive','naive','full','full']])
-        print((['global']*len(contexts)*2)+(['gene']*len(contexts)*2))
-        print(np.asarray([[context.split('_')[0]]*2 for context in contexts]*2).flatten())
-        multiindex_rows = pd.MultiIndex.from_arrays([(['global']*len(contexts)*2)+(['gene']*len(contexts)*2),np.asarray([[context.split('_')[0]]*2 for context in contexts]*2).flatten()])
-        threshold_comp_mat.index = multiindex_rows
-        threshold_comp_mat.to_csv('simulation_output/threshold_comp_mat.csv')
-        threshold_comp_mat_2 = pd.DataFrame(dtype=float)
-        for variant in variant_order:
-            threshold_comp_mat_2 = pd.concat([threshold_comp_mat_2, threshold_comp_mat.loc[:,[(.001,variant), (.01, variant), (.1, variant)]]], axis=1)
-        threshold_comp_mat_2.to_csv('simulation_output/comp_by_threshold.csv')'''
-        thresholds = [str(threshold) for threshold in thresholds]
-        threshold_comp_mat = pd.DataFrame(index = pd.MultiIndex.from_product([variant_order+['average', 't-test'], ['positional', 'contextual']], names=['variant', 'mut_type']), columns = pd.MultiIndex.from_product([thresholds, ['global', 'gene_specific'], contexts], names=['threshold', 'rate_type', 'contexts'])) #np.zeros([len(variant_order)*2, len(thresholds)*2*len(contexts)])
-        #print(threshold_comp_mat)
-        for threshold in thresholds:
-            for sim_type in ['global','gene_specific']:
-                for context_type in contexts:
-                    for variant in variant_order:
-                        current_mat = positional_context_dict[[key for key in positional_context_dict.keys() if sim_type in key and context_type in key and '/'+variant in key and str(threshold) in key][0]]
-                        threshold_comp_mat.loc[(variant,'positional'),(threshold,sim_type,context_type)] = current_mat[0]
-                        threshold_comp_mat.loc[(variant,'contextual'),(threshold,sim_type,context_type)] = current_mat[1]
-                    threshold_comp_mat.loc[('average','positional'),(threshold,sim_type,context_type)] = threshold_comp_mat.loc[(variant_order,'positional'), (threshold,sim_type,context_type)].mean()
-                    threshold_comp_mat.loc[('average','contextual'),(threshold,sim_type,context_type)] = threshold_comp_mat.loc[(variant_order,'contextual'), (threshold,sim_type,context_type)].mean()
-                    if context_type != contexts[0]:
-                        #test that both distributions are normal
-                        #stuff for montecarlo
-                        rvs = lambda size: stats.norm.rvs(size=size, random_state=np.random.default_rng())
-                        def mc_statistic(x, axis):
-                            return stats.skew(x, axis)
-
-                        #test first_dist
-                        first_dist = threshold_comp_mat.loc[(variant_order,'contextual'),(threshold,sim_type,context_type)].values.astype(float)
-                        if first_dist.shape[0] > 8: #enough data for skewtest
-                            first_dist_pvalue = stats.normaltest(first_dist).pvalue
-                        else: #not enough data for skewtest
-                            first_dist_pvalue = stats.monte_carlo_test(first_dist, rvs, mc_statistic).pvalue
-                        #test second_sim dist
-                        second_dist = threshold_comp_mat.loc[(variant_order,'contextual'),(threshold,sim_type,contexts[contexts.index(context_type)-1])].values.astype(float)
-                        if second_dist.shape[0] > 8:
-                            second_dist_pvalue = stats.normaltest(second_dist).pvalue
-                        else:
-                            second_dist_pvalue = stats.monte_carlo_test(second_dist, rvs, mc_statistic).pvalue
-                        
-                        #if normal dists, normal t-test
-                        if first_dist_pvalue <0.05 and second_dist_pvalue < 0.05:
-                            t_result = stats.ttest_ind(first_dist, second_dist, equal_var=True, alternative='greater')
-                        #else welch's t-test
-                        else:
-                            t_result = stats.ttest_ind(first_dist, second_dist, equal_var=False, alternative='greater')
-                        threshold_comp_mat.loc[('t-test','positional'),(threshold,sim_type,context_type)] = t_result.statistic
-                        threshold_comp_mat.loc[('t-test','contextual'),(threshold,sim_type,context_type)] = t_result.pvalue
-        #remove excess output info
-        if reduced_output == True:
-            #print(threshold_comp_mat.columns)
-            drop_labels = []
-            for threshold in thresholds:
-                if 'blind_contexts' in contexts:
-                    for label in [['global','blind_contexts'], ['gene_specific','blind_contexts'], ['gene_specific','naive_contexts']]:
-                        drop_labels.append((threshold, label[0], label[1]))
-                else:
-                    for label in [['gene_specific', 'naive_contexts']]:
-                        drop_labels.append((threshold, label[0], label[1]))
-            '''if 'blind_contexts' in contexts:
-                drop_labels = [(threshold,label[0],label[1]) for label in [['global','blind_contexts'], ['gene_specific','blind_contexts'], ['gene_specific','naive_contexts']]]
-            else:
-                drop_labels = [(threshold,'gene_specific','naive_contexts')]'''
-            #print(drop_labels)
-            threshold_comp_mat.drop(labels=drop_labels, axis=1, inplace=True)
-            for threshold in thresholds:
-                keys = [(threshold, 'global','naive_contexts'), (threshold, 'global','full_contexts'), (threshold, 'gene_specific','full_contexts')]
-                #print(keys)
-                for index, key in enumerate(keys[1:]):
-                    #test that both distributions are normal
-                    #test first_dist
-                    first_dist = threshold_comp_mat.loc[(variant_order,'contextual'),key].values.astype(float)
-                    first_dist_pvalue = stats.normaltest(first_dist).pvalue
-                    #test second_sim dist
-                    second_dist = threshold_comp_mat.loc[(variant_order,'contextual'),keys[index]].values.astype(float)
-                    second_dist_pvalue = stats.normaltest(second_dist).pvalue
-                    print(first_dist, second_dist)
-
-                    #if normal dists, normal t-test
-                    if first_dist_pvalue <0.05 and second_dist_pvalue < 0.05:
-                        t_result = stats.ttest_ind(first_dist, second_dist, equal_var=True, alternative='greater')
-                    #else welch's t-test
-                    else:
-                        t_result = stats.ttest_ind(first_dist, second_dist, equal_var=False, alternative='greater')
-                    threshold_comp_mat.loc[('t-test','positional'),key] = t_result.statistic
-                    threshold_comp_mat.loc[('t-test','contextual'),key] = t_result.pvalue
-
-                    '''#if normal dists, normal t-test
-                    if first_dist_pvalue <0.05 and second_dist_pvalue < 0.05:
-                        t_result = stats.ttest_ind(first_dist, second_dist, equal_var=True, alternative='less')
-                    #else welch's t-test
-                    else:
-                        t_result = stats.ttest_ind(first_dist, second_dist, equal_var=False, alternative='less')
-                    threshold_comp_mat.loc[('t-test','positional'),keys[index]] = t_result.statistic
-                    threshold_comp_mat.loc[('t-test','contextual'),keys[index]] = t_result.pvalue'''
-                
-        threshold_comp_mat.to_csv('simulation_output/threshold_comp_mat.csv')
-        thresholds = [float(threshold) for threshold in thresholds]
-        #threshold_comp_mat.loc[(variant_order,'contextual'),([0.00001, 0.001, 0.1],['global','gene_specific'],['naive_contexts', 'full_contexts'])].to_csv('simulation_output/threshold_comp_mat_reduced.csv')
-        #print(threshold_comp_mat_reduced)
-        #threshold_comp_mat_reduced.drop((0.1,'gene_specific','naive_contexts'), axis=1, inplace=True).to_csv('simulation_output/threshold_comp_mat_reduced.csv')
-    
-    if output_mut_mat != None:
-        #create df of pre-sim mut rates and post-sim mut rates
-        #have dict of [corr,t_stat]
-        #want matrix of corrs and t_stats
-        #rows = variants
-        #cols = threshold,sim_type/context_type
-        print('yep')
-        sim_combos = ['gene_specific_full_contexts', 'gene_specific_naive_contexts', 'gene_specific_blind_contexts', 'global_full_contexts', 'global_naive_contexts', 'global_blind_contexts']
-        multiindex_cols = pd.MultiIndex.from_product([[str(threshold) for threshold in thresholds], sim_combos], names=['threshold', 'sim'])
-        multiindex_rows = pd.MultiIndex.from_product([['correlation', 't_stat'], variant_order], names=['stat', 'variant'])
-        output_mut_mat_corr_df = pd.DataFrame(np.zeros([2*len(variant_order)*len(thresholds)*len(sim_combos)]).reshape([2*len(variant_order),len(thresholds)*len(sim_combos)]), index=multiindex_rows, columns=multiindex_cols)
-        print(averaged_mats_correlation)
-        #print(output_mut_mat_corr_df)
-        #contextual mut rates
-        for key, corr_t_stat in averaged_mats_correlation.items():
-            print(key, corr_t_stat)
-            key_split = key.split('/')
-            variant = key_split[3]
-            threshold = key_split[-1]
-            sim = key_split[1]+'_'+key_split[2]
-            output_mut_mat_corr_df.loc[('correlation', variant), (threshold,sim)] = corr_t_stat[0]
-            output_mut_mat_corr_df.loc[('t_stat', variant), (threshold,sim)] = corr_t_stat[1]
-        output_mut_mat_corr_df.to_csv('simulation_output/post_sim_corr.csv')
-
-        #look at all mutations placed not just correct ones
-        for key, corr_t_stat in sim_mats_correlation.items():
-            print(key, corr_t_stat)
-            key_split = key.split('/')
-            variant = key_split[3]
-            threshold = key_split[-1]
-            sim = key_split[1]+'_'+key_split[2]
-            output_mut_mat_corr_df.loc[('correlation', variant), (threshold,sim)] = corr_t_stat[0]
-            output_mut_mat_corr_df.loc[('t_stat', variant), (threshold,sim)] = corr_t_stat[1]
-        output_mut_mat_corr_df.to_csv('simulation_output/sim_mut_rate_corr.csv')
-
-    if anova == True:
-        print(contextual_dist_dict)
-        #dict of each threshold/sim_type/context/variant combo
-        contextual_df = pd.DataFrame(np.zeros([len(thresholds)*2*len(contexts)*len(variant_order), num_sims]), index=pd.MultiIndex.from_product([[str(threshold) for threshold in thresholds],['global', 'gene_specific'],contexts,variant_order]))
-        for threshold in thresholds:
-            for variant in variant_order:
-                variant_list = list(contextual_dist_dict[str(threshold)+'/'+variant])
-                for sim_context in variant_list:
-                    df_index = [str(threshold)]
-                    if 'global' in sim_context[0]:
-                        df_index.append('global')
-                    elif 'gene_specific' in sim_context[0]:
-                        df_index.append('gene_specific')
-                    if 'blind' in sim_context[0]:
-                        df_index.append('blind_contexts')
-                    if 'naive' in sim_context[0]:
-                        df_index.append('naive_contexts')
-                    if 'full' in sim_context[0]:
-                        df_index.append('full_contexts')
-                    df_index.append(variant)
-                    #print(df_index, len(sim_context[1]))
-                    contextual_df.loc[tuple(df_index)] = sim_context[1]
-
-        anova_df = pd.DataFrame(np.zeros([len(variant_order)*2+2, len(thresholds)*2*len(contexts)]), index=pd.MultiIndex.from_product([['f']+variant_order, ['mean','std']], names=['variant', 'stat']), columns=pd.MultiIndex.from_product([[str(threshold) for threshold in thresholds],['global', 'gene_specific'],contexts], names=['threshold','sim_type','context_type']))
-        for threshold in thresholds:
-            for sim_type in ['global', 'gene_specific']:
-                for context_type in contexts:
-                    anova = stats.f_oneway(*contextual_df.loc[(str(threshold),sim_type,context_type)].values)
-                    anova_df.loc[('f','mean'), (str(threshold),sim_type,context_type)] = anova[0]
-                    anova_df.loc[('f','std'), (str(threshold),sim_type,context_type)] = anova[1]
-                    for variant in variant_order:
-                        mean = np.mean(contextual_df.loc[(str(threshold),sim_type,context_type,variant)].values)
-                        std = np.std(contextual_df.loc[(str(threshold),sim_type,context_type,variant)].values)
-                        anova_df.loc[(variant), (str(threshold),sim_type,context_type)] = [mean, std]
-        anova_df.to_csv('simulation_output/anova_df.csv')
 
 '''normalize a simulation's output by the number of mutations placed and the number of possible matches'''
 def normalize_threshold_mat_by_placed_and_matches(threshold_mat, mut_count):
@@ -1319,7 +940,7 @@ def normalize_threshold_mat_by_placed_and_matches(threshold_mat, mut_count):
 def analyze_sims_from_server(variant_order, thresholds, contexts, analysis_threshold, analysis_variant, output_info):
     
     #gene wide triplet counts for non-overlapping genes
-    gwtc_dict = {gene[:-4]:pd.read_csv('sim_ref_data/fourfold_gwtc/triplets/'+gene, index_col=0, header=0) for gene in os.listdir('sim_ref_data/fourfold_gwtc/triplets') if gene[:-4]=='.csv'}
+    gwtc_dict = {gene[:-4]:pd.read_csv('sim_ref_data/4fold/gwtc/triplets/'+gene, index_col=0, header=0) for gene in os.listdir('sim_ref_data/4fold/gwtc/triplets') if gene[:-4]=='.csv'}
 
     positional_context_dict = {} #stores a list for each sim type combination of positional and contextual matches
     t_tests = {} #stores t-statistic and pvalue dataframes for each sim type combination
@@ -1419,7 +1040,7 @@ def analyze_sims_from_server(variant_order, thresholds, contexts, analysis_thres
     fig, axs = plt.subplots(figsize=(30,12), dpi=200, nrows=2, ncols=5)
     fig_index = 0
     pos_con_df = pd.DataFrame()
-    chi_square_df = pd.DataFrame(np.zeros([4,2]), index=pd.MultiIndex.from_product([['positional','contextual'],['t-stat','p-value']]), columns=['blind->naive','naive->full'])
+    chi_square_df = pd.DataFrame(np.zeros([4,2]), index=pd.MultiIndex.from_product([['positional','contextual'],['t-stat','p-value']]), columns=['naive->tstv','tstv->full'])
     #loop through contexts
     for context_type in range(positional_match_tensor.shape[1]):
         pos_mat = torch.mean(positional_match_tensor[0,context_type,:,0], dim=(0))
@@ -1429,7 +1050,7 @@ def analyze_sims_from_server(variant_order, thresholds, contexts, analysis_thres
         sns.heatmap(pos_mat, ax=axs[0,fig_index], annot=True, cbar=False, yticklabels=rows_figs, xticklabels=columns_figs, cmap='Greys')
         sns.heatmap(con_mat, ax=axs[1,fig_index], annot=True, cbar=False, yticklabels=rows_figs, xticklabels=columns_figs, cmap='Greys')
         fig_index+=1
-        #create difference matrix between context_types to compare blind/naive and naive/full
+        #create difference matrix between context_types to compare naive/tstv and tstv/full
         if context_type != 2:
             #subtract averaged matrices
             pos_mat = torch.mean(positional_match_tensor[0,context_type+1,:,0], dim=(0)) - torch.mean(positional_match_tensor[0,context_type,:,0], dim=(0))
@@ -1450,7 +1071,7 @@ def analyze_sims_from_server(variant_order, thresholds, contexts, analysis_thres
     plt.savefig('simulation_output/final_info/pos_con.png')
     plt.close()
     pos_con_df.index = pd.MultiIndex.from_product([['positional','contextual'],rows_figs])
-    pos_con_df.columns = pd.MultiIndex.from_product([['blind','blind->naive','naive','naive->full','full'], columns_figs])
+    pos_con_df.columns = pd.MultiIndex.from_product([['naive','naive->tstv','tstv','tstv->full','full'], columns_figs])
     pos_con_df.to_csv('simulation_output/final_info/pos_con_df.csv')
     chi_square_df.to_csv('simulation_output/final_info/pos_con_df_t_tests.csv')
     '''fig, axs = plt.subplots(figsize=(20,20), nrows=positional_match_tensor.shape[-3], ncols=positional_match_tensor.shape[1])
@@ -1469,7 +1090,7 @@ def analyze_sims_from_server(variant_order, thresholds, contexts, analysis_thres
 
     '''
     updated methodology
-        - doing anova to see if blind/naive/full are different distributions
+        - doing anova to see if naive/tstv/full are different distributions
         - then doing tukey to see which ones
     '''
     
@@ -1497,6 +1118,8 @@ def analyze_sims_from_server(variant_order, thresholds, contexts, analysis_thres
     
 
     #going to normalize the number of matching mutations by the number of mutations placed in each iteration and the total number of possible matches at that threshold
+    #calculate the number of positional and contextual matches that the sim can match based on population snps for the variant
+    calculate_possible_matches(variant_order, thresholds)
     normalize_threshold_mat_by_placed_and_matches(thresholded_mat, int(re.search(r'\d+', analysis_folder).group(0))).to_csv('simulation_output/global/'+analysis_folder+'/thresholded_mat_normalized.csv')
 
 #show base naive simulation performance and change for naive>tstv and naive>full
@@ -1526,7 +1149,7 @@ def reformat_pos_con_fig():
     matches = ['Positional Matches','Contextual Matches']
     #loop through sim types
     for match_index, match_type in enumerate(['positional','contextual']):
-        for model_index, model_type in enumerate(['blind','naive','full']):
+        for model_index, model_type in enumerate(['naive','tstv','full']):
             mat = pos_con_df.loc[match_type,model_type].to_numpy()[:12,:12] / full_sums[match_index]
             annot = np.round(mat, 2)
             sns.heatmap(mat, ax=axs[model_index,match_index], cmap='Greys', linecolor='grey', linewidth=.5, cbar=False, annot=annot, annot_kws={'fontsize':20}, vmin=np.min(full_mins), vmax=np.max(full_maxs))
@@ -1543,8 +1166,8 @@ def reformat_pos_con_fig():
     plt.close()
 
     '''comparative performance'''
-    full_maxs = [[np.max(pos_con_df.loc[match_type,model_type].to_numpy()[:12,:12] - pos_con_df.loc[match_type,'blind'].to_numpy()[:12,:12]) for match_type in ['positional','contextual'] for model_type in ['full','naive']]]
-    full_mins = [[np.min(pos_con_df.loc[match_type,model_type].to_numpy()[:12,:12] - pos_con_df.loc[match_type,'blind'].to_numpy()[:12,:12]) for match_type in ['positional','contextual'] for model_type in ['full','naive']]]
+    full_maxs = [[np.max(pos_con_df.loc[match_type,model_type].to_numpy()[:12,:12] - pos_con_df.loc[match_type,'naive'].to_numpy()[:12,:12]) for match_type in ['positional','contextual'] for model_type in ['full','tstv']]]
+    full_mins = [[np.min(pos_con_df.loc[match_type,model_type].to_numpy()[:12,:12] - pos_con_df.loc[match_type,'naive'].to_numpy()[:12,:12]) for match_type in ['positional','contextual'] for model_type in ['full','tstv']]]
     max = np.max(full_maxs)
     min = -1 * max
     print(min,max)
@@ -1562,14 +1185,14 @@ def reformat_pos_con_fig():
     
     #loop through sim types
     for match_index, match_type in enumerate(['positional','contextual']):
-        for model_index, model_type in enumerate(['blind','naive','full']):
+        for model_index, model_type in enumerate(['naive','tstv','full']):
             if model_index == 0:
                 mat = pos_con_df.loc[match_type,model_type].to_numpy()[:12,:12]
                 annot = np.round(mat, 2)
                 sns.heatmap(mat, ax=axs[model_index,match_index], cmap='Greys', linecolor='grey', linewidth=.5, cbar=False, annot=annot, annot_kws={'fontsize':18})
                 axs[model_index,match_index].set_ylabel(matches[match_index], fontsize=36, rotation='vertical')
             else:
-                mat = pos_con_df.loc[match_type,model_type].to_numpy()[:12,:12] - pos_con_df.loc[match_type,'blind'].to_numpy()[:12,:12]
+                mat = pos_con_df.loc[match_type,model_type].to_numpy()[:12,:12] - pos_con_df.loc[match_type,'naive'].to_numpy()[:12,:12]
                 annot = np.round(pos_con_df.loc[match_type,model_type].to_numpy()[:12,:12], 2)
                 sns.heatmap(mat, ax=axs[model_index,match_index], cmap='coolwarm', linecolor='grey', linewidth=.5, cbar=False, annot=annot, annot_kws={'fontsize':18}, center=0, vmin=min, vmax=max)
             axs[model_index,match_index].set_yticklabels([row.replace('-','') for row in rows_figs][:12], rotation='horizontal', fontsize=22) #update rows
@@ -1604,6 +1227,9 @@ def analyze_sims_genes(thresholds, contexts, analysis_threshold, analysis_varian
     #table with binary presence of mutation at each site
     if sim_output_flag:
         sim_output_table = np.array([])
+
+    #calculate the context counts for the genome
+    gen_genome_context_counts()
     
     for context_type in contexts:
         if not os.path.exists('simulation_output/global/'+sim_folder+'/genes/'+context_type):
@@ -1661,7 +1287,7 @@ def analyze_sims_genes(thresholds, contexts, analysis_threshold, analysis_varian
             avg_matches_series.name = 'average_matches'
             avg_matches_series.index = np.arange(1,29904)
             sim_output_table = pd.concat([sim_output_table,avg_matches_series], axis=1)
-            sim_output_table.to_csv('simulation_output/final_info/final_tables/supp_tables/sim_matching_table.csv')
+            sim_output_table.to_csv('simulation_output/final_info/sim_matching_table.csv')
 
 #create histogram for sim analysis result
 def gen_sim_hist(gene, context_type, sim_folder):
@@ -2054,7 +1680,7 @@ def compare_variant_mutations():
     matching_muts_df.to_csv('simulation_output/variant_mutation_comparison.csv')
 
 #create 4x4 output plot for variants
-def plot_variants_grid(global_avg_subset_mat, global_naive_subset_mat, variant_order, shape='default', threshold=0):
+def plot_variants_grid(global_avg_subset_mat, global_tstv_subset_mat, variant_order, shape='default', threshold=0):
     global rows, columns
     #normalize rates even though data is between 0 and 1 by default because its normalized by the triplet count
     #for mat_index, mat in enumerate(global_avg_subset_mat):
@@ -2119,7 +1745,7 @@ def plot_variants_grid(global_avg_subset_mat, global_naive_subset_mat, variant_o
         
         #create axes
         var_corr_order = ['persistent', 'transient', 'alpha', 'delta', 'kraken', 'omicron', 'pirola','aggregate']
-        ax12, ax13 = [fig.add_subplot(primary_variant_sub_grid[i,0]) for i in range(0,2)] #aggregate_full, aggregate_naive
+        ax12, ax13 = [fig.add_subplot(primary_variant_sub_grid[i,0]) for i in range(0,2)] #aggregate_full, aggregate_tstv
         ax_cbar = fig.add_subplot(primary_variant_grid[0,1])
         ax2, ax3, ax4, ax5 = [fig.add_subplot(right_grid[i,0]) for i in [0,2,4,6]]
         ax6, ax7, ax8 = [fig.add_subplot(bottom_grid[0,i]) for i in [0,2,4]]
@@ -2224,12 +1850,12 @@ def plot_variants_grid(global_avg_subset_mat, global_naive_subset_mat, variant_o
         else:
             sns.heatmap(mat, cmap='Greys', cbar=False, xticklabels=False, yticklabels=False, ax=axes[axs_index], linecolor='gray', linewidth=.5)
             axes[axs_index].set_title(var_corr_order[axs_index].capitalize(), fontsize=fontsize_2)
-    #plot naive alpha = old, epsilon = new
-    naive = global_naive_subset_mat[variant_order.index(var_corr_order[-1])].reshape([1,12])[0].numpy()
-    print(naive)
+    #plot tstv alpha = old, epsilon = new
+    tstv = global_tstv_subset_mat[variant_order.index(var_corr_order[-1])].reshape([1,12])[0].numpy()
+    print(tstv)
     print('variance')
     print(variances)
-    sns.heatmap(pd.DataFrame([naive,variances]), cmap='Greys', cbar=False, ax=ax13, linecolor='gray', linewidth=.5) #'alpha'
+    sns.heatmap(pd.DataFrame([tstv,variances]), cmap='Greys', cbar=False, ax=ax13, linecolor='gray', linewidth=.5) #'alpha'
     ax13.set_xticklabels(columns_figs, fontsize=fontsize_1, rotation=45)
     ax13.set_yticklabels(['N[X>Y]N','max.var'], fontsize=fontsize_1, rotation='horizontal')
     pd.Series(variances, index=columns_figs).to_csv('simulation_output/final_info/'+var_corr_order[-1]+'_max_var.csv')
@@ -2983,7 +2609,7 @@ def gen_subset_gene_info(genes_dict):
                 for sites in ['fourfold','all']:
                     if sites == 'fourfold':
                         #read in valid fourfold positions for gene
-                        valid_pos = pd.read_csv('sim_ref_data/fourfold_gwtc/valid_fourfold_positions/'+gene+'.csv', index_col=0, header=0).to_numpy()
+                        valid_pos = pd.read_csv('sim_ref_data/4fold/gwtc/valid_fourfold_positions/'+gene+'.csv', index_col=0, header=0).to_numpy()
                         valid_pos = np.intersect1d(valid_pos, position_indices)
                         for centering in ['left','center']:
                             #left means 4fold is 3rd position of triplet, center means 4fold in 2nd position of triplet
@@ -3790,7 +3416,7 @@ def compile_reference_mutations(variant_order, threshold):
 
 #plot total gwtc as heatmap
 def plot_triplet_count(size=(12,12)):
-    triplet_counts = pd.read_csv('sim_ref_data/fourfold_gwtc/triplets/total.csv', index_col=0, header=0)
+    triplet_counts = pd.read_csv('sim_ref_data/4fold/gwtc/triplets/total.csv', index_col=0, header=0)
     if size == (12,12):
         fig, ax = plt.subplots(figsize=(8,6), dpi=250)
         sns.heatmap(np.repeat(triplet_counts.to_numpy(), 3, axis=1)[:-4,:], cmap='Greys', linewidths=.5, linecolor='Black', xticklabels=columns_figs, yticklabels=rows_figs[:-4])
@@ -3875,7 +3501,7 @@ def real_vaccine_correlation(mats, variant_orders):
     '''
     #reconfigure mut_rates to be 12x4 and aggregate across groups
     reconfigured_mats = torch.tensor(np.zeros([3,num_variants+2,12,4])) #(agg,g1,g2),(var,g1,g2),(row),(col)
-    triplet_counts = pd.read_csv('sim_ref_data/fourfold_gwtc/triplets/total.csv', index_col=0, header=0)
+    triplet_counts = pd.read_csv('sim_ref_data/4fold/gwtc/triplets/total.csv', index_col=0, header=0)
     for mat_index, mat in enumerate(mats):
         print(thresholds[mat_index])
         for var_index in range(mat.shape[0]):
@@ -3941,7 +3567,7 @@ def randomize_correlation_matrices(variant_order):
     #normal case is 1e-5:5e-05
     mut_counts = {'alpha':1963, 'beta':428, 'delta':2403, 'epsilon':617, 'gamma':1741, 'iota':285, 'omicron':2811, 'pirola':2360, 'kraken':2091, 'aggregate':519}
 
-    triplet_counts = pd.read_csv('sim_ref_data/fourfold_gwtc/triplets/total.csv', index_col=0, header=0) #read in triplet counts for all encoding genes
+    triplet_counts = pd.read_csv('sim_ref_data/4fold/gwtc/triplets/total.csv', index_col=0, header=0) #read in triplet counts for all encoding genes
     #probability of each cell in matrix is split to work with np method, so options is [0:144) n number of times and probs is 1 n number of times
     options = np.array([])
     probs = np.array([])
@@ -4021,7 +3647,7 @@ def randomize_correlation_matrices(variant_order):
 #generate random matrices and analyze columns vs observed variant matrices
 def randomize_correlation_matrices_columns(variant_order):
 
-    triplet_counts = pd.read_csv('sim_ref_data/fourfold_gwtc/triplets/total.csv', index_col=0, header=0).iloc[:12,:] #read in triplet counts for all encoding genes
+    triplet_counts = pd.read_csv('sim_ref_data/4fold/gwtc/triplets/total.csv', index_col=0, header=0).iloc[:12,:] #read in triplet counts for all encoding genes
     #gen probability dist from triplet_counts
     options = {}
     probs = {}
@@ -4193,8 +3819,8 @@ def correlate_jf_with_our_data(weighted=False):
     total_mat_df.columns = pd.MultiIndex.from_product([['population','vivo'],columns])
 
     #do tstv and naive
-    pop_global, pop_tstv, pop_blind = read_thresholded_global_mat('5e-05', pop_vars) #pull mutation matrices
-    vivo_global, vivo_tstv, vivo_blind = read_thresholded_global_mat('5e-05', vivo_vars, jf_flag=1) #pull jf matrices
+    pop_global, pop_tstv, pop_naive = read_thresholded_global_mat('5e-05', pop_vars) #pull mutation matrices
+    vivo_global, vivo_tstv, vivo_naive = read_thresholded_global_mat('5e-05', vivo_vars, jf_flag=1) #pull jf matrices
 
     for context_type in ['tstv','naive']:
         for var_1 in pop_vars:
@@ -4203,8 +3829,8 @@ def correlate_jf_with_our_data(weighted=False):
                     mat_1 = pop_tstv[pop_vars.index(var_1)].numpy().flatten()
                     mat_2 = vivo_tstv[vivo_vars.index(var_2)].numpy().flatten()
                 else:
-                    mat_1 = pop_blind[pop_vars.index(var_1)].numpy().flatten()
-                    mat_2 = vivo_blind[vivo_vars.index(var_2)].numpy().flatten()
+                    mat_1 = pop_naive[pop_vars.index(var_1)].numpy().flatten()
+                    mat_2 = vivo_naive[vivo_vars.index(var_2)].numpy().flatten()
                 #correlate full context df
                 corr = stats.pearsonr(mat_1, mat_2)
                 output_df.loc[('normal',context_type,'corr',var_2), ('both',var_1)] = corr[0]
@@ -4294,23 +3920,12 @@ def count_gene_muts_thresholded(threshold):
     output_df = output_df.loc[('all','persistent','transient','alpha','delta','kraken','omicron','pirola','beta','epsilon','eta','gamma','hongkong','iota','kappa','lambda','mu'),('S','E','M','N','ORF1a','ORF3a','ORF6','ORF7a','ORF7b','ORF8','ORF10','nsp1','nsp2','nsp3','nsp4','nsp5','nsp6','nsp7','nsp8','nsp9','nsp10','nsp11','rdrp','nsp13','nsp14','nsp15','nsp16','NTD','RBD','SD1_2','NiRAN','interface','hand')]
     output_df.to_csv('simulation_output/high_freq_mut_dist_'+str(threshold)+'.csv')
     
-#looping through each of the simulations run (that I renamed) and refactoring the output
-def post_sims_analysis(analysis_variants, thresholds):
-    # want
-    # muts correct / muts placed
-    # % of correct at each threshold (non-inclusive at lower frequencies)
-    # easy graph for drop-off of muts returned by # placed
+#count the number of snps that the simulation can match for the variant
+def calculate_possible_matches(analysis_variants, thresholds):
+    # snps can match at the position and the snp type
+
     if not os.path.exists('simulation_output/final_info/final_sim_analysis'):
         os.mkdir('simulation_output/final_info/final_sim_analysis')
-
-    #averaging across variants, thresholds
-    #so we have mut_count, context_type, positional/contextual, sim_type
-    #graph_df.loc[(mut_type,num_muts),context_type]
-    #graph_df = pd.DataFrame(np.zeros([2*11, 3]), index=pd.MultiIndex.from_product([['positional_matches','contextual_matches'],np.arange(1000,12000,1000)]), columns=['blind_contexts','naive_contexts','full_contexts'])
-    output_df = pd.DataFrame()
-    mut_counts = np.array([])
-    datasets = np.array([])
-    matches = np.array([])
     
     #read in number of possible positional and contextual matches for each variant at each threshold
     possible_matches = pd.DataFrame(np.zeros([2*len(analysis_variants), len(thresholds)]), index=pd.MultiIndex.from_product([analysis_variants,['positional','contextual']]), columns=thresholds)
@@ -4320,112 +3935,13 @@ def post_sims_analysis(analysis_variants, thresholds):
             ref_muts = pd.read_csv('sim_ref_data/'+variant_folder+'/reference_mutations/'+str(threshold)+'_reference_mutations.csv', index_col=0, header=0)
             possible_matches.loc[(variant,'contextual'),threshold] = ref_muts.shape[0]
             possible_matches.loc[(variant,'positional'),threshold] = len(np.unique(ref_muts.loc[:,'position']))
-    print(possible_matches.index, possible_matches.columns)
-    print(possible_matches)
     possible_matches.to_csv('simulation_output/final_info/final_sim_analysis/possible_matches.csv')
-
-    #loop through analysis folders
-    for analysis_folder in [folder for folder in os.listdir('simulation_output/global/') if 'analysis' in folder]:
-        num_muts = int(re.search(r'\d+', analysis_folder).group(0))
-        if 'unweighted' in analysis_folder:
-            dataset_type = 'unweighted'
-        elif 'weighted' in analysis_folder:
-            dataset_type = 'weighted'
-        else:
-            dataset_type = 'population'
-        
-        #read in thresholded_mat
-        analysis_mat = pd.read_csv('simulation_output/global/'+analysis_folder+'/thresholded_mat.csv', index_col=[0,1], header=[0,1])
-
-        print(analysis_mat)
-
-        #adding 'all' to output df
-        output_df = pd.concat([output_df, analysis_mat.loc[('all')]], axis=0)
-        mut_counts= np.append(mut_counts, [num_muts,num_muts])
-        datasets = np.append(datasets, [dataset_type,dataset_type])
-        matches = np.append(matches, ['positional_matches','contextual_matches'])
-
-        #creating heatmap of matching muts for 'all'
-        '''for match_type in ['positional','contextual']:
-            match_tensor = torch.load('simulation_output/global/'+analysis_folder+'/'+match_type+'_tensor.pt')
-            #print(positional_tensor.shape)
-            #[5,3,100,17,16,12]
-            #[thresholds,contexts,num_sims,num_variants,row,col]
-            #variants follow variant_order
-            tensor_shape = match_tensor.shape
-            fig, axs = plt.subplots(figsize=(30,20), nrows=tensor_shape[1], ncols=tensor_shape[0])
-            
-            for threshold_index in range(tensor_shape[0]):
-                for context_index in range(tensor_shape[1]):
-                    #print(analysis_variants)
-                    #print(torch.mean(match_tensor[threshold_index,context_index,:,analysis_variants.index('all')], dim=(0)).shape)
-                    match_df = pd.DataFrame(torch.mean(match_tensor[threshold_index,context_index,:,analysis_variants.index('all')], dim=(0)), index=rows_figs, columns=columns_figs)
-                    sns.heatmap(match_df, ax=axs[context_index,threshold_index], cmap='Greys', linecolor='gray', linewidth=.5, annot=True, fmt='.2G')
-                    axs[context_index,threshold_index].set_title(str(thresholds[threshold_index])+'_'+['naive','tstv','full'][context_index])
-                    axs[context_index,threshold_index].set_xticklabels(columns_figs, rotation='horizontal')
-                    #axs[context_index,threshold_index].set_yticklabels(rows_figs)
-            plt.savefig('simulation_output/global/'+analysis_folder+'/'+match_type+'_matches.png')
-            plt.close()'''
-
-
-    output_df.index = pd.MultiIndex.from_tuples(zip(mut_counts.flatten(),datasets.flatten(),matches.flatten()))
-    
-    #output_df = output_df.loc[]
-    output_df.sort_index(level=[0,1], inplace=True)
-    #output_df.drop(labels=['unweighted'], axis=0, level=1, inplace=True)
-    print(output_df)
-    output_df.to_csv('simulation_output/final_info/final_sim_analysis/all_df.csv')
-
-    '''#normalizing positional and contextual matches by the number of mutations placed or the maximum mutations possible at a threshold if it is lower
-        possible_matches_mat = np.reshape(np.repeat(possible_matches.to_numpy(),3), [-1, len(thresholds*3)])
-        possible_matches_mat = np.where(possible_matches_mat > num_muts, num_muts, possible_matches_mat)
-        normalized_mat = analysis_mat.to_numpy() / possible_matches_mat
-        normalized_mat = pd.DataFrame(normalized_mat, index=analysis_mat.index, columns=analysis_mat.columns)
-        #print(normalized_mat)
-        normalized_mat.to_csv('simulation_output/global/'+analysis_folder+'/thresholded_mat_normalized.csv')
-
-        #getting % of mutation matches per threshold (not inclusive of higher thresholds)
-        proportion_mat = analysis_mat.copy()
-        for context_type in ['blind_contexts','naive_contexts','full_contexts']:
-            temp_thresholds = thresholds[::-1]
-            for threshold_index, threshold in enumerate(temp_thresholds):
-                if threshold_index != 0:
-                    if threshold_index != 1:
-                        previous_vals = np.sum(proportion_mat.loc[:,(temp_thresholds[:threshold_index],context_type)], axis=1)
-                    else:
-                        previous_vals = proportion_mat.loc[:,(temp_thresholds[threshold_index-1],context_type)]
-                    proportion_mat.loc[:,(threshold,context_type)] = proportion_mat.loc[:,(threshold,context_type)] - previous_vals
-            proportion_mat.loc[:,(thresholds,context_type)] = proportion_mat.loc[:,(thresholds,context_type)] / np.reshape(np.repeat(analysis_mat.loc[:,(temp_thresholds[-1], context_type)].to_numpy(), len(thresholds)), (-1, len(thresholds)))
-        #print(proportion_mat)
-        proportion_mat.to_csv('simulation_output/global/'+analysis_folder+'/thresholded_mat_proportions.csv')
-                
-        #adding values for graph
-        for mut_type in ['positional_matches','contextual_matches']:
-            for context_type in ['blind_contexts','naive_contexts','full_contexts']:
-                #print(np.mean(normalized_mat.loc[(analysis_variants,mut_type),(thresholds,context_type)].to_numpy()))
-                #graph_df.loc[(mut_type,num_muts),context_type] = np.mean(normalized_mat.loc[(analysis_variants,mut_type),(thresholds,context_type)].to_numpy())
-                graph_df[dataset_type+mut_type+context_type+str(num_muts)] = pd.Series([dataset_type, mut_type, num_muts, context_type, np.mean(normalized_mat.loc[(analysis_variants,mut_type),(thresholds,context_type)].to_numpy())], index=['dataset_type','mut_type','mut_count','context_type','value'])'''
-
-    '''#graph_df_copy = graph_df.copy()
-    print(graph_df)
-    #graph_df.reindex(index=pd.MultiIndex.from_tuples(graph_df.loc['mut_type',:],graph_df.loc['mut_count',:]), columns=graph_df.loc['context_type',:])
-    graph_index = pd.MultiIndex.from_product([np.unique(graph_df.loc['mut_type']), np.unique(graph_df.loc['mut_count'])])
-    #graph_columns = ['blind_contexts','naive_contexts','full_contexts']#np.unique(graph_df.loc['context_type'])
-    graph_columns = pd.MultiIndex.from_product([['population','weighted','unweighted'],['blind_contexts','naive_contexts','full_contexts']])
-    graph_df_temp = pd.DataFrame(np.zeros([len(graph_index),len(graph_columns)]), index=graph_index, columns=graph_columns)
-    for col in graph_df.columns:
-        row = graph_df[col]
-        graph_df_temp.loc[(row['mut_type'],row['mut_count']),(row['dataset_type'],row['context_type'])] = row['value']
-    graph_df = graph_df_temp
-    print(graph_df)
-    graph_df.to_csv('simulation_output/final_info/final_sim_analysis/graph_df.csv')'''
 
 #check the count/proportion of mutations placed in each region of the genome during simulation
 def analyze_sim_muts_per_gene(sim_folder, analysis_variant, gene_regions_dict, sub_dict_cols):
     output_df = pd.DataFrame(np.zeros([12,len(gene_regions_dict)]), index=pd.MultiIndex.from_product([['full','tstv','naive'],['count','gene_size','proportion_local','proportion_global']]), columns=[gene for gene in gene_regions_dict.keys()])
 
-    sim_type_names = {'full_contexts':'full', 'naive_contexts':'tstv', 'blind_contexts':'naive'} #renaming sim types
-    for sim_type in ['full_contexts','naive_contexts','blind_contexts']:
+    for sim_type in ['full_contexts','tstv_contexts','naive_contexts']:
         print(sim_type)
         num_files = 0
         for sim_file in os.listdir(sim_folder+'/'+sim_type+'/'+analysis_variant+'/mut_dicts/5e-05/'):
@@ -4433,15 +3949,15 @@ def analyze_sim_muts_per_gene(sim_folder, analysis_variant, gene_regions_dict, s
             mut_positions = mut_df.loc[:,'position'].to_numpy()
             #for region_dict in gene_regions_dicts:
             for gene, positions in gene_regions_dict.items():
-                output_df.loc[(sim_type_names[sim_type],'count'),gene] += mut_positions[(mut_positions>positions[0]) & (mut_positions<positions[1])].shape[0]
+                output_df.loc[(sim_type,'count'),gene] += mut_positions[(mut_positions>positions[0]) & (mut_positions<positions[1])].shape[0]
             num_files += 1
         print(output_df)
-        output_df.loc[(sim_type_names[sim_type],'count'),:] = output_df.loc[((sim_type_names[sim_type]),'count'),:] / num_files
+        output_df.loc[(sim_type,'count'),:] = output_df.loc[((sim_type),'count'),:] / num_files
         for gene, positions in gene_regions_dict.items():
-            output_df.loc[(sim_type_names[sim_type],'gene_size'),gene] = positions[1]-positions[0]
+            output_df.loc[(sim_type,'gene_size'),gene] = positions[1]-positions[0]
         for cols in sub_dict_cols:
-            output_df.loc[(sim_type_names[sim_type],'proportion_local'),cols] = output_df.loc[(sim_type_names[sim_type],'count'),cols] / output_df.loc[(sim_type_names[sim_type],'count'),cols].sum(axis=None)
-        output_df.loc[(sim_type_names[sim_type],'proportion_global'),:] = output_df.loc[(sim_type_names[sim_type],'count'),:] / output_df.loc[(sim_type_names[sim_type],'count'),:].sum(axis=None)
+            output_df.loc[(sim_type,'proportion_local'),cols] = output_df.loc[(sim_type,'count'),cols] / output_df.loc[(sim_type,'count'),cols].sum(axis=None)
+        output_df.loc[(sim_type,'proportion_global'),:] = output_df.loc[(sim_type,'count'),:] / output_df.loc[(sim_type,'count'),:].sum(axis=None)
     print(output_df)
     output_df.to_csv('simulation_output/final_info/final_sim_analysis/mutation_distribution.csv')
 
@@ -4452,16 +3968,16 @@ def main():
     variant_order = ['alpha','delta','kraken','omicron','pirola', 'beta','epsilon','eta','gamma','hongkong','iota','kappa','lambda','mu']
     persistent_variants = ['alpha', 'delta', 'kraken', 'omicron', 'pirola']
     transient_variants = ['beta','epsilon','eta','gamma','hongkong','iota','kappa','lambda','mu']
-    pooled_variants = ['all','transient','persistent','mut_vars']
+    pooled_variants = ['all','transient','persistent','cdm_vars']
     mut_variants = ['mut_total','mut_alpha','mut_beta','mut_delta','mut_gamma','mut_omicron','mut_usa']
     sim_variants = ['all','mut_total']
     num_sims = 100
     thresholds = ['5e-05', '0.0005', '0.005', '0.05', '0.5']
     simulation_type = ['global'] #gene_specific is deprecated
-    contexts = ['blind_contexts', 'naive_contexts', 'full_contexts'] #blind = no contextual or resultant mutation info, naive = no contextual info, full = contextual and resultant mutation info
+    contexts = ['naive_contexts', 'tstv_contexts', 'full_contexts'] #naive = no contextual or resultant mutation info, tstv = no contextual info, full = contextual and resultant mutation info
     #matching number of unique context mutations in 'all'
     num_muts = {variant:1000 for variant in sim_variants} #number of mutations to place per simulation
-    scalers = {'blind_contexts':.015, 'naive_contexts':.015, 'full_contexts':.25} #weighting of variant mutation matrices to increase or decrease number of runs per simulation needed to achieve x-number of mutations placed
+    scalers = {'naive_contexts':.015, 'tstv_contexts':.015, 'full_contexts':.25} #weighting of variant mutation matrices to increase or decrease number of runs per simulation needed to achieve x-number of mutations placed
 
     #create file structure
     if not os.path.exists('simulation_output'):
@@ -4472,8 +3988,10 @@ def main():
         os.mkdir('simulation_output/global')
 
     '''generate variant reference data'''
-    #gen_context_dependent_info(dataset='population', variant_order=variant_order, gene_dict=(subset_genes | nsp_positions | rdrp_sub_domains | spike_sub_domains | overlapping_genes), fourfold_positions=fourfold_positions, thresholds=thresholds)
-    #convert_mutation_dataset(lethals=True, exclude_c_to_t=False)
+    #based on GISAID sequencing data
+    gen_context_dependent_info(dataset='population', variant_order=variant_order, gene_dict=(subset_genes | nsp_positions | rdrp_sub_domains | spike_sub_domains | overlapping_genes), fourfold_positions=fourfold_positions, thresholds=thresholds)
+    #based on in vivo cirseq data
+    convert_mutation_dataset(lethals=True, exclude_c_to_t=False)
 
     #simulate polymorphisms in reference sequence based on cdm or cdp info
     #uses 'all' for population polymorphism data, 'mut_total' for in vivo mutation data
@@ -4481,22 +3999,22 @@ def main():
     output_info = str(num_muts[dataset])
 
     if dataset == 'all':
-        global_avg_subset_mat, global_naive_subset_mat, global_blind_subset_mat = read_thresholded_global_mat('5e-05', persistent_variants+pooled_variants[:-1]) #pull mutation matrices for cdp data
+        global_avg_subset_mat, global_tstv_subset_mat, global_naive_subset_mat = read_thresholded_global_mat('5e-05', persistent_variants+pooled_variants[:-1]) #pull mutation matrices for cdp data
     elif dataset == 'mut_total':
-        global_avg_subset_mat, global_naive_subset_mat, global_blind_subset_mat = read_thresholded_global_mat('5e-05', mut_variants, jf_flag=1) #pull mutation matrices for cdm data
+        global_avg_subset_mat, global_tstv_subset_mat, global_naive_subset_mat = read_thresholded_global_mat('5e-05', mut_variants, jf_flag=1) #pull mutation matrices for cdm data
 
     for context_type in contexts:
         if context_type == 'full_contexts':
             init_sim(variant=dataset, num_sims=num_sims, num_muts=num_muts[dataset],
                             mut_mat=global_avg_subset_mat[(persistent_variants+pooled_variants[:-1]).index(dataset)],
                             contexts=context_type, threshold=thresholds[0], scaler=scalers[context_type])
+        elif context_type == 'tstv_contexts':
+            init_sim(variant=dataset, num_sims=num_sims, num_muts=num_muts[dataset],
+                            mut_mat=global_tstv_subset_mat[(persistent_variants+pooled_variants[:-1]).index(dataset)],
+                            contexts=context_type, threshold=thresholds[0], scaler=scalers[context_type])
         elif context_type == 'naive_contexts':
             init_sim(variant=dataset, num_sims=num_sims, num_muts=num_muts[dataset],
                             mut_mat=global_naive_subset_mat[(persistent_variants+pooled_variants[:-1]).index(dataset)],
-                            contexts=context_type, threshold=thresholds[0], scaler=scalers[context_type])
-        elif context_type == 'blind_contexts':
-            init_sim(variant=dataset, num_sims=num_sims, num_muts=num_muts[dataset],
-                            mut_mat=global_blind_subset_mat[(persistent_variants+pooled_variants[:-1]).index(dataset)],
                             contexts=context_type, threshold=thresholds[0], scaler=scalers[context_type])
     
     #simulation analysis
@@ -4508,10 +4026,10 @@ def main():
     '''analyze variants and aggregates'''
     #correlate context-dependent matrices between variants
     corr_df, pvalue_df = correlate_variants(global_avg_subset_mat, variant_order=persistent_variants+pooled_variants[:-1], extra_variants=False, var_corr_order=['all','persistent','delta','alpha','pirola','omicron','transient','kraken'], vmin=.001, vmax=1)
-    corr_df.to_csv('simulation_output/final_info/final_tables/supp_tables/5e-5_full_corr_transients.csv')
-    pvalue_df.to_csv('simulation_output/final_info/final_tables/supp_tables/5e-5_full_p_values_transients.csv')
+    corr_df.to_csv('simulation_output/final_info/5e-5_full_corr.csv')
+    pvalue_df.to_csv('simulation_output/final_info/5e-5_full_p_values.csv')
     #plot context-dependent matrices
-    plot_variants_grid(global_avg_subset_mat, global_naive_subset_mat, persistent_variants+pooled_variants[:-1], shape='3_vars', threshold='5e-5')
+    plot_variants_grid(global_avg_subset_mat, global_tstv_subset_mat, persistent_variants+pooled_variants[:-1], shape='3_vars', threshold='5e-5')
 
 
     '''call 1-off functions'''
@@ -4528,7 +4046,7 @@ def main():
     #analyze_fourfold_thresholds(thresholds)
     #gen_aggregate_plots(global_avg_subset_mat[variant_order_aggregate.index('all')])
     #testing_alpha()
-    #collate_mat_rates_and_variances(global_avg_subset_mat, global_naive_subset_mat, variant_order_aggregate)
+    #collate_mat_rates_and_variances(global_avg_subset_mat, global_tstv_subset_mat, variant_order_aggregate)
     #compare_two_variants(['all','jean_total'])
     #gen_genome_context_counts()
     #calc_shared_muts_between_variants(variant_order, thresholds)
@@ -4537,12 +4055,13 @@ def main():
     #gen_all_vs_total_output_figure()
     #format_sim_fastas('jean_total', '5e-05', 1000, 'vivo')                                                                                                                                                 [5e-5,5e-4],[5e-4,5e-3],[5e-3,5e-2],[5e-2,.5],[.5,1]
     #low_and_high_figure(output_types=['sim','pop'], sim_folder_path='simulation_output/global/analysis_1000/genes/full_contexts/total_hist.csv', window_size=500, thresholds=[[5e-5,1]], regions_dict=(subset_genes | nsp_positions | rdrp_sub_domains)) #250,500,1000,1500,2000,2500,3000
+    #analyze_pop_windows()
     #convert_shared_mutations_list('4(unique_mutations)_full_clade', 5e-05, 1)
     #analyze_genome_context_counts((subset_genes | nsp_positions | rdrp_sub_domains | spike_sub_domains))
     #rdrp_table_fig()
     #analyze_sim_muts_per_gene('simulation_output/global/analysis_1000', 'all', (temp_gene_dict | nsp_positions | rdrp_sub_domains | spike_sub_domains), [[gene for gene in temp_gene_dict.keys()], [gene for gene in nsp_positions.keys()], [gene for gene in rdrp_sub_domains.keys()]])
-    #plot_mut_mat(global_naive_subset_mat[variant_order_aggregate.index('all')], 'sim_ref_data/0(all)_full_clade/thresholded_mutations/5e-05_tstv_mat.png', None, 'global', 'naive_contexts', include_a=False, vmin=0, vmax=1, annot=True)
-    #plot_mut_mat(global_blind_subset_mat[variant_order_aggregate.index('all')], 'sim_ref_data/0(all)_full_clade/thresholded_mutations/5e-05_naive_mat.png', None, 'global', 'super_naive_contexts', include_a=False, vmin=0, vmax=1, annot=True)
+    #plot_mut_mat(global_tstv_subset_mat[variant_order_aggregate.index('all')], 'sim_ref_data/0(all)_full_clade/thresholded_mutations/5e-05_tstv_mat.png', None, 'global', 'tstv_contexts', include_a=False, vmin=0, vmax=1, annot=True)
+    #plot_mut_mat(global_naive_subset_mat[variant_order_aggregate.index('all')], 'sim_ref_data/0(all)_full_clade/thresholded_mutations/5e-05_naive_mat.png', None, 'global', 'super_naive_contexts', include_a=False, vmin=0, vmax=1, annot=True)
     #vaccine_corr_updated(global_avg_subset_mat, variant_order_aggregate)
     #xpehh_testing((subset_genes | nsp_positions | rdrp_sub_domains | spike_sub_domains))
     #analyze_gene_mutation_frequencies(variant_order_aggregate+['beta','epsilon','eta','gamma','iota','kappa','lambda','mu','hongkong'], (subset_genes | nsp_positions | rdrp_sub_domains | spike_sub_domains))

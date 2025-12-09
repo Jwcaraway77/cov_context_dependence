@@ -32,7 +32,7 @@ def save_fasta(fasta_results, sim_run, num_muts, num_iters, sim_type, variant, c
     '''if contexts:
         path = 'simulation_output/'+sim_type+'/full_contexts/' + variant + '/fastas/'+str(threshold)+'/simulated_fasta_' + str(sim_run)+'.fasta'
     else:
-        path = 'simulation_output/'+sim_type+'/naive_contexts/' + variant + '/fastas/'+str(threshold)+'/simulated_fasta_' + str(sim_run)+'.fasta'
+        path = 'simulation_output/'+sim_type+'/tstv_contexts/' + variant + '/fastas/'+str(threshold)+'/simulated_fasta_' + str(sim_run)+'.fasta'
     '''
     path = 'simulation_output/'+sim_type+'/'+contexts+'/' + variant + '/fastas/'+str(threshold)+'/simulated_fasta_' + str(sim_run)+'.fasta'
     with open(path, 'w') as f:
@@ -50,44 +50,44 @@ def save_mutation_dict(mutation_dict_results, sim_run, sim_type, variant, contex
     
 #read global mat for a specific threshold
 def read_thresholded_global_mat(threshold, variant_order, rate_type='re-calced', jf_flag=0):
-    #rate_type determines if naive and blind mats are averaged full-rates or re-calced from mut counts and triplet counts
+    #rate_type determines if tstv and naive mats are averaged full-rates or re-calced from mut counts and triplet counts
     global_avg_subset_mat = []
+    global_tstv_subset_mat = []
     global_naive_subset_mat = []
-    global_blind_subset_mat = []
     for variant in variant_order: #loop through variants
         var_folder = [var_folder for var_folder in os.listdir('sim_ref_data') if '('+variant+')' in var_folder and 'full_clade' in var_folder][0]
         if jf_flag == 1:
             global_avg_subset_mat.append(torch.tensor(pd.read_csv('sim_ref_data/'+var_folder+'/thresholded_mutations/both_mut_rate_mat.csv', index_col=0, header=0).values[:12,:12]))
+            global_tstv_subset_mat.append(torch.tensor(pd.read_csv('sim_ref_data/'+var_folder+'/thresholded_mutations/both_tstv_mut_rate_mat.csv', index_col=0, header=0).to_numpy()))
             global_naive_subset_mat.append(torch.tensor(pd.read_csv('sim_ref_data/'+var_folder+'/thresholded_mutations/both_tstv_mut_rate_mat.csv', index_col=0, header=0).to_numpy()))
-            global_blind_subset_mat.append(torch.tensor(pd.read_csv('sim_ref_data/'+var_folder+'/thresholded_mutations/both_naive_mut_rate_mat.csv', index_col=0, header=0).to_numpy()))
         else:
             global_avg_subset_mat.append(torch.tensor(pd.read_csv('sim_ref_data/'+var_folder+'/thresholded_mutations/'+str(threshold)+'_mat.csv', index_col=0, header=0).values))
     global_avg_subset_mat = torch.stack(global_avg_subset_mat) #stack variant mats into tensor
     print(global_avg_subset_mat.shape)
     if jf_flag == 1:
+        global_tstv_subset_mat = torch.stack(global_tstv_subset_mat)
         global_naive_subset_mat = torch.stack(global_naive_subset_mat)
-        global_blind_subset_mat = torch.stack(global_blind_subset_mat)
-        return global_avg_subset_mat, global_naive_subset_mat, global_blind_subset_mat
+        return global_avg_subset_mat, global_tstv_subset_mat, global_naive_subset_mat
     
     if rate_type == 'averaged':
+        #tstv mat
+        global_tstv_subset_mat = torch.mean(global_avg_subset_mat, dim=(1))
         #naive mat
-        global_naive_subset_mat = torch.mean(global_avg_subset_mat, dim=(1))
-        #blind mat
-        global_blind_subset_mat = torch.stack([torch.mean(global_avg_subset_mat[:,:,i:i+3], dim=(1,2)) for i in range(0,12,3)]).T
+        global_naive_subset_mat = torch.stack([torch.mean(global_avg_subset_mat[:,:,i:i+3], dim=(1,2)) for i in range(0,12,3)]).T
     elif rate_type == 're-calced':
         #read in triplet counts
-        triplet_counts = np.repeat(pd.read_csv('sim_ref_data/fourfold_gwtc/triplets/total.csv', index_col=0, header=0).to_numpy(), 3).reshape(12,12)
+        triplet_counts = np.repeat(pd.read_csv('sim_ref_data/4fold/gwtc/triplets/total.csv', index_col=0, header=0).to_numpy(), 3).reshape(12,12)
         full_muts = global_avg_subset_mat * triplet_counts #un-normalize mutation counts
+        #tstv_mat
+        tstv_muts = torch.sum(full_muts, dim=(1)) #sum muts across rows
+        tstv_triplets = np.sum(triplet_counts, axis=0) #sum triplets across rows
+        global_tstv_subset_mat = tstv_muts / tstv_triplets #calc tstv `rates`
         #naive_mat
-        naive_muts = torch.sum(full_muts, dim=(1)) #sum muts across rows
-        naive_triplets = np.sum(triplet_counts, axis=0) #sum triplets across rows
+        naive_muts = torch.stack([torch.sum(full_muts[:,:,i:i+3], dim=(1,2)) for i in range(0,12,3)]).T #sum muts across rows and T,G,C,A columns
+        naive_triplets = np.array([np.sum(triplet_counts[:,i:i+3]) for i in range(0,12,3)]) #sum triplets across rows and T,G,C,A columns
         global_naive_subset_mat = naive_muts / naive_triplets #calc naive `rates`
-        #blind_mat
-        blind_muts = torch.stack([torch.sum(full_muts[:,:,i:i+3], dim=(1,2)) for i in range(0,12,3)]).T #sum muts across rows and T,G,C,A columns
-        blind_triplets = np.array([np.sum(triplet_counts[:,i:i+3]) for i in range(0,12,3)]) #sum triplets across rows and T,G,C,A columns
-        global_blind_subset_mat = blind_muts / blind_triplets #calc blind `rates`
 
-    return global_avg_subset_mat, global_naive_subset_mat, global_blind_subset_mat
+    return global_avg_subset_mat, global_tstv_subset_mat, global_naive_subset_mat
 
 '''compare reference and mutated fastas'''
 def compare_fastas_2(fasta_1, fasta_2, path):
@@ -114,6 +114,54 @@ def compare_fastas_2(fasta_1, fasta_2, path):
         f.write('total differences: '+ str(diff)+ ' \n')
         f.write(comp)
         #print(path+'comp_fasta.txt')
+
+'''plot a mutation matrix to path'''
+def plot_mut_mat(variant_mat, path, gene_order, data_type, contexts, include_a=False, vmin=0, vmax=1, annot=False):
+    #potential shapes: 15x16x12 = genes full mat, 15x12 = genes tstv mat, 16x12 = global full mat, 12 = global tstv mat
+    print('generating ' + path)
+    print(variant_mat.shape)
+    if 'full' in contexts:
+        rows_temp = rows_figs
+    else:
+        rows_temp = ['N[X>Y]N']
+    cols_temp = columns_figs
+    if data_type == 'genes':
+        fig, axs = plt.subplots(figsize=(8,45), nrows=variant_mat.shape[0])
+        for gene in range(variant_mat.shape[0]):
+            if contexts == 'super_tstv_contexts':
+                sns.heatmap(torch.unsqueeze(variant_mat[gene],0), cmap='Greys', ax=axs[gene], vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
+                axs[gene].set_xticklabels(labels=columns_shortened_figs)
+                axs[gene].set_yticklabels(labels=rows_temp, rotation='horizontal')
+            elif contexts == 'tstv_contexts':
+                fig.set_size_inches(8,16)
+                sns.heatmap(torch.unsqueeze(variant_mat[gene],0), cmap='Greys', ax=axs[gene], xticklabels=cols_temp, yticklabels=rows_temp, vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
+                axs[gene].set_yticklabels(labels=rows_temp, rotation='horizontal')
+            elif include_a == False:
+                sns.heatmap(variant_mat[gene,:12,:], cmap='Greys', ax=axs[gene], xticklabels=cols_temp, yticklabels=rows_temp[:12], vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
+            else:
+                sns.heatmap(variant_mat[gene], cmap='Greys', ax=axs[gene], xticklabels=cols_temp, yticklabels=rows_temp, vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
+            axs[gene].set_title(gene_order[gene])
+    elif data_type == 'global':
+        if contexts == 'super_tstv_contexts':
+            fig, axs = plt.subplots(figsize=(4,1.3), dpi=200, layout='tight')
+            sns.heatmap(torch.unsqueeze(variant_mat,0), cmap='Greys', ax=axs, vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
+            axs.set_xticklabels(labels=columns_shortened_figs)
+            axs.set_yticklabels(labels=rows_temp, rotation='horizontal')
+        elif contexts == 'tstv_contexts':
+            fig, axs = plt.subplots(figsize=(8,1.3), dpi=200, layout='tight')
+            sns.heatmap(torch.unsqueeze(variant_mat,0), cmap='Greys', ax=axs, xticklabels=cols_temp, yticklabels=rows_temp, vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
+            axs.set_yticklabels(labels=rows_temp, rotation='horizontal')
+        elif include_a == False:
+            fig, axs = plt.subplots(figsize=(8,7))
+            sns.heatmap(variant_mat[:12,:], cmap='Greys', ax=axs, xticklabels=cols_temp, yticklabels=rows_temp[:12], vmin=vmin, vmax=vmax, annot=annot, linewidth=.5, linecolor='gray')
+        else:
+            fig, axs = plt.subplots(figsize=(8,7))
+            sns.heatmap(variant_mat, cmap='Greys', ax=axs, xticklabels=cols_temp, yticklabels=rows_temp, vmin=vmin, vmax=vmax, linewidth=.5, linecolor='gray')
+        axs.set_title('global subset rates')
+    plt.tight_layout()
+    plt.savefig(path)
+    plt.close()
+
 
 #further analyzing context counts for genes
 def gene_context_count_analysis():
@@ -168,13 +216,13 @@ def expected_vs_obs(subset_genes):
     print(obs_df)
     del observed_df
     '''
-    triplet_counts = pd.read_csv('sim_ref_data/fourfold_gwtc/triplets/total.csv', index_col=0, header=0)
+    triplet_counts = pd.read_csv('sim_ref_data/4fold/gwtc/triplets/total.csv', index_col=0, header=0)
     fasta = pd.Series([*get_fasta()[:-1]], name='ref')
 
     #now generating expected mutations from multiplying normalized variant mut matrix with gene 4fold triplet counts
     '''exp_df = pd.DataFrame(np.zeros(obs_df.shape), index=obs_df.index, columns=obs_df.columns)
     for gene in exp_df.columns:
-        #gene_df = pd.read_csv('sim_ref_data/fourfold_gwtc/triplets/'+gene+'.csv', index_col=0, header=0)
+        #gene_df = pd.read_csv('sim_ref_data/4fold/gwtc/triplets/'+gene+'.csv', index_col=0, header=0)
         if len(subset_genes[gene]) > 2:
             positions = []
             for sub_positions in subset_genes[gene]:
@@ -243,7 +291,7 @@ def expected_vs_obs(subset_genes):
         gene_sizes_list.append(gene_sizes)
         mut_counts = {}
         for variant in exp_df.index:
-            var_folder = [folder for folder in os.listdir('sim_ref_data') if '('+variant+')' in folder and 'clade' in folder and 'jean' not in folder][0]
+            var_folder = [folder for folder in os.listdir('sim_ref_data') if '('+variant+')' in folder and 'clade' in folder and 'mut' not in folder][0]
             mut_count = pd.read_csv('sim_ref_data/'+var_folder+'/reference_mutations/'+threshold+'_reference_mutations.csv', index_col=0, header=0).shape[0]
             mut_counts[variant] = mut_count
             print(variant, mut_count)
@@ -332,7 +380,7 @@ def analyze_contextual_influence(variant, threshold):
     var_mat = pd.read_csv('sim_ref_data/'+folder+'/thresholded_mutations/'+threshold+'_mat.csv', index_col=0, header=0)
 
     #recalc rates
-    triplet_counts = pd.read_csv('sim_ref_data/fourfold_gwtc/triplets/total.csv', index_col=0, header=0) #read in triplet counts
+    triplet_counts = pd.read_csv('sim_ref_data/4fold/gwtc/triplets/total.csv', index_col=0, header=0) #read in triplet counts
     triplet_counts = np.repeat(triplet_counts.to_numpy(), 3).reshape(12,12) #convert to 12x12 matrix
     print(var_mat.shape, triplet_counts.shape)
 
@@ -356,7 +404,7 @@ def analyze_contextual_influence(variant, threshold):
         mut_sum = np.sum(three_prime_mat[:,col])
         triplet_sum = np.sum(three_prime_triplets[:,col])
 
-        #distribute x mutations to each row in col, naively assuming each context is equally likely
+        #distribute x mutations to each row in col, tstvly assuming each context is equally likely
         exp_muts = mut_sum * (three_prime_triplets[:,col]/triplet_sum) #trying first without rounding
         expected_muts_df.loc[tpm_labels,columns_figs[col]] = exp_muts
 
@@ -393,7 +441,7 @@ def analyze_contextual_influence(variant, threshold):
         mut_sum = np.sum(five_prime_mat[:,col])
         triplet_sum = np.sum(five_prime_triplets[:,col])
 
-        #distribute x mutations to each row in col, naively assuming each context is equally likely
+        #distribute x mutations to each row in col, tstvly assuming each context is equally likely
         exp_muts = mut_sum * (five_prime_triplets[:,col]/triplet_sum) #trying first without rounding
         expected_muts_df.loc[fpm_labels,columns_figs[col]] = exp_muts
 
@@ -512,7 +560,7 @@ def meaningful_triplet_counts(gene_dict):
 def correlate_all_meaningful_contexts():
     aggregate_mat = pd.read_csv('sim_ref_data/0(aggregate)_full_clade/thresholded_mutations/5e-05_mat.csv', index_col=0, header=0)
     context_mats = {file.split('_')[0]:pd.read_csv('simulation_output/context_counts/genes_meaningful/'+file, index_col=0, header=0) for file in os.listdir('simulation_output/context_counts/genes_meaningful')}
-    triplet_counts = pd.read_csv('sim_ref_data/fourfold_gwtc/triplets/total.csv', index_col=0, header=0)
+    triplet_counts = pd.read_csv('sim_ref_data/4fold/gwtc/triplets/total.csv', index_col=0, header=0)
     #triplet_counts = {file.split('_')[0]:pd.read_csv('simulation_output/context_counts/triplet_counts/'+file, index_col=0, header=0) for file in os.listdir('simulation_output/context_counts/triplet_counts')}
     output_df = pd.DataFrame(np.zeros([4,len(context_mats.keys())]), index=pd.MultiIndex.from_product([['(12,12)','(12,4)'],['corr', 'p']]), columns=list(context_mats.keys()))
     #there are 2 ways to correlate, 12x12 or 12x4
@@ -808,7 +856,7 @@ def analyze_fourfold_thresholds(thresholds):
     variants = []
 
     #loop through variants
-    for var_folder in [folder for folder in os.listdir('sim_ref_data') if '_full_clade' in folder and 'jean' not in folder]:
+    for var_folder in [folder for folder in os.listdir('sim_ref_data') if '_full_clade' in folder and 'mut' not in folder]:
         variants.append(re.search(r'\(\w+\)', var_folder).group(0)[1:-1])
 
         #read in collapsed mut list
@@ -816,7 +864,7 @@ def analyze_fourfold_thresholds(thresholds):
               
         #read in valid 4fold positions
         #valid positions is indexed at 0, ref_muts are indexed at 1
-        valid_fourfold_positions = pd.read_csv('sim_ref_data/fourfold_gwtc/valid_fourfold_positions/total.csv', index_col=0, header=0).to_numpy().flatten()
+        valid_fourfold_positions = pd.read_csv('sim_ref_data/4fold/gwtc/valid_fourfold_positions/total.csv', index_col=0, header=0).to_numpy().flatten()
         #drop muts not at 4fold sites
         collapsed_muts.drop(collapsed_muts.loc[~collapsed_muts['position'].isin(valid_fourfold_positions+1)].index, axis=0, inplace=True)
 
@@ -912,7 +960,7 @@ def gen_aggregate_plots(mat):
     aggregate_plots_helper(three_prime_df, variance, 1)'''
     
     #re-calc method
-    triplet_counts = pd.read_csv('sim_ref_data/fourfold_gwtc/triplets/total.csv', index_col=0, header=0)
+    triplet_counts = pd.read_csv('sim_ref_data/4fold/gwtc/triplets/total.csv', index_col=0, header=0)
     row_counts = pd.DataFrame(np.zeros([4,12]), index=['N[X>Y]U','N[X>Y]G','N[X>Y]C','N[X>Y]A'], columns=columns_figs)
     row_triplets = pd.DataFrame(np.zeros([4,12]), index=['N[X>Y]U','N[X>Y]G','N[X>Y]C','N[X>Y]A'], columns=columns_figs)
     for index, row_indices in enumerate([[0,4,8],[1,5,9],[2,6,10],[3,7,11]]):
@@ -954,15 +1002,15 @@ def testing_alpha():
     print(df_2)
 
 
-#create a dataframe with 12x12 full contexts, 1x12 naive, 1x12 variances
-def collate_mat_rates_and_variances(global_avg_subset_mat, global_naive_subset_mat, variant_order):
+#create a dataframe with 12x12 full contexts, 1x12 tstv, 1x12 variances
+def collate_mat_rates_and_variances(global_avg_subset_mat, global_tstv_subset_mat, variant_order):
     output_df = pd.DataFrame()
     #loop through variants
     for var_index, variant in enumerate(variant_order):
         full_mat = pd.DataFrame(global_avg_subset_mat[var_index], index=rows_figs[:-4], columns=columns_figs)
-        naive_mat = pd.DataFrame(global_naive_subset_mat[var_index].reshape(1,12), index=['N[X>Y]N'], columns=columns_figs)
+        tstv_mat = pd.DataFrame(global_tstv_subset_mat[var_index].reshape(1,12), index=['N[X>Y]N'], columns=columns_figs)
         max_variance = pd.DataFrame((torch.max(global_avg_subset_mat[var_index], dim=0)[0] - torch.min(global_avg_subset_mat[var_index], dim=0)[0]).reshape(1,12), index=['max.var'], columns=columns_figs)
-        output_df = pd.concat([output_df, pd.concat([full_mat,naive_mat,max_variance], axis=0)], axis=1)
+        output_df = pd.concat([output_df, pd.concat([full_mat,tstv_mat,max_variance], axis=0)], axis=1)
     output_df.columns = pd.MultiIndex.from_product([variant_order,(columns_figs)])
     output_df.to_csv('simulation_output/final_info/variant_comparison_matrices.csv')
 
@@ -1008,16 +1056,22 @@ def gen_mut_mat(positions, orig_nucs, mut_nucs, shape=(12,12)):
 
 #gen genome context counts
 def gen_genome_context_counts():
+    #create target directory
+    if not os.path.exists('simulation_output/context_counts'):
+        os.mkdir('simulation_output/context_counts')
+
+    #read in fasta
     fasta = np.array([*get_fasta()[:-1]])
+    #gen empty dataframes
     context_counts = pd.DataFrame(np.zeros([16,4]), index=rows+['A[X>Y]T','A[X>Y]G','A[X>Y]C','A[X>Y]A'], columns=columns_shortened)
     context_list = pd.DataFrame(np.zeros([len(fasta),6]), columns=['T','G','C','A','matching','triplet'])
+    #loop through genome
     for position in range(1,fasta.shape[0]-1):
         triplet = fasta[position-1:position+2]
-        context_counts.loc[triplet[0]+'[X>Y]'+triplet[-1], triplet[1]] += 1
-        context_list.loc[position, 'triplet'] = ''.join(triplet)
+        context_counts.loc[triplet[0]+'[X>Y]'+triplet[-1], triplet[1]] += 1 #increment triplet count
+        context_list.loc[position, 'triplet'] = ''.join(triplet) #store triplet
     context_counts.to_csv('simulation_output/context_counts/genome_wide_contexts.csv')
     context_list.to_csv('simulation_output/context_counts/genome_wide_list.csv')
-
 
 #look through population mutation data and find regions/positions of lowest frequency
 def search_population_mutations(subset_genes, window_sizes):
@@ -1027,9 +1081,9 @@ def search_population_mutations(subset_genes, window_sizes):
         #create dataframe with each position, nucleotide, and mutation to store variant proportions
         mut_frequencies = pd.concat([pd.Series(np.repeat(np.arange(1,29904),4), name='position'), pd.Series(np.repeat(np.array([*get_fasta()[:-1]]), 4), name='old'), pd.Series(np.tile(['T','G','C','A'], 29903), name='mut')], axis=1)
         if dataset == 'population':
-            var_folders = [folder for folder in os.listdir('sim_ref_data') if 'clade' in folder and 'jean' not in folder]
+            var_folders = [folder for folder in os.listdir('sim_ref_data') if 'clade' in folder and 'mut' not in folder]
         else:
-            var_folders = [folder for folder in os.listdir('sim_ref_data') if 'clade' in folder and 'jean' in folder]
+            var_folders = [folder for folder in os.listdir('sim_ref_data') if 'clade' in folder and 'mut' in folder]
         variants = [re.search(r'\(\w+\)', folder).group(0)[1:-1] for folder in var_folders]
         for var_folder in var_folders:
             variant = re.search(r'\(\w+\)', var_folder).group(0)[1:-1]
@@ -1186,13 +1240,11 @@ def prep_sim_fasta_for_blast(context_type, analysis_variant, analysis_threshold,
             mut_df['count'] = np.ones([mut_df.shape[0],1])
     mut_df.to_csv('simulation_output/testing_000.csv')
 
-
-
 #create an image of population aggregate vs vivo aggregate with and without c->t column
 def gen_all_vs_total_output_figure():
     fig, axs = plt.subplots(figsize=(26,20), nrows=2, ncols=2, dpi=200, layout='tight') #output figure
     for fig_index, fig_type in enumerate(['full','cut']): #correlate full matrices and matrices with removing C>U
-        for index, dataset in enumerate(['all','jean_total']): #loop through datasets
+        for index, dataset in enumerate(['all','mut_total']): #loop through datasets
             var_folder = [folder for folder in os.listdir('sim_ref_data') if 'full_clade' in folder and '('+dataset+')' in folder][0]
             if dataset=='all':
                 name = 'Population'
@@ -1218,15 +1270,14 @@ def gen_all_vs_total_output_figure():
 
             #plot full matrix
             #annot = np.round(mut_mat.to_numpy(), 2)
-            print(annot)
-            print(np.where(annot=='-1.0', True,False))
-            sns.heatmap(mut_mat, cmap='Greys', ax=axs[fig_index,index], linecolor='gray', linewidth=.5, annot=annot, fmt='s', annot_kws={'fontsize':22}, vmax=1, vmin=0, mask=annot=='-1.0')
+            #print(annot)
+            #print(np.where(annot=='-1.0', True,False))
+            sns.heatmap(mut_mat, cmap='Greys', ax=axs[fig_index,index], linecolor='gray', linewidth=.5, annot=False, vmax=1, vmin=0, mask=annot=='-1.0')
             axs[fig_index,index].set_xticklabels(columns_figs, rotation=45, fontsize=22)
             axs[fig_index,index].set_yticklabels(rows_figs[:12], rotation='horizontal', fontsize=22)
             axs[fig_index,index].set_title(name+' '+fig_type, fontsize=28)
 
     plt.savefig('simulation_output/final_info/final_figs/all_vs_total.png')
-
 
 #pull fastas from simulation and format them with variant reference fastas
 def format_sim_fastas(output_variant, threshold, mut_count, dataset_toggle='population'):
@@ -1234,7 +1285,7 @@ def format_sim_fastas(output_variant, threshold, mut_count, dataset_toggle='popu
         analysis_folder = 'analysis_'+str(mut_count)
     elif dataset_toggle == 'vivo':
         analysis_folder = 'analysis_'+str(mut_count)+'_weighted'
-    for context_type in ['blind_contexts','naive_contexts','full_contexts']:
+    for context_type in ['naive_contexts','tstv_contexts','full_contexts']:
         with open('simulation_output/global/'+analysis_folder+'/'+context_type+'_fastas.fa', 'w') as file:
             for sim_fasta in os.listdir('simulation_output/global/'+analysis_folder+'/'+context_type+'/'+output_variant+'/fastas/'+str(threshold)+'/'):
                 lines = open('simulation_output/global/'+analysis_folder+'/'+context_type+'/'+output_variant+'/fastas/'+str(threshold)+'/'+sim_fasta).readlines()
@@ -1324,9 +1375,6 @@ def calc_series_windows(df, window_size, cols, type, thresholds, pop_type='frequ
 
     return temp_df.loc[:,directions]
     
-
-
-
 #take simulation output and population mutation data to plot regions of high/low mutation frequency
 def low_and_high_figure(output_types=['sim'], sim_folder_path='', window_size=10, thresholds=[], regions_dict={}):
     #read in simulation_output 
@@ -1364,7 +1412,7 @@ def low_and_high_figure(output_types=['sim'], sim_folder_path='', window_size=10
     #loop through window sizes
     for threshold in thresholds:
         #arguments: dataframe, window_size, variant, dataset_type, threshold, calculation_type, window_positioning
-        plot_df.loc[:,'pop_'+str(window_size)+'_'+str(threshold[0])] = calc_series_windows(pop_mut_freqs, 100, ['all'], 'pop', threshold, 'binary', ['middle'])
+        plot_df.loc[:,'pop_'+str(window_size)+'_'+str(threshold[0])] = calc_series_windows(pop_mut_freqs, 100, ['all'], 'pop', threshold, 'frequency', ['middle'])
     #save dataframes for tracking
     plot_df.loc[:,[col for col in plot_df.columns if 'pop' in col]].to_csv('simulation_output/final_info/final_sim_analysis/population_mut_windows.csv')
     plot_df.to_csv('simulation_output/final_info/final_sim_analysis/plot_df.csv')
@@ -1481,6 +1529,62 @@ def low_and_high_figure(output_types=['sim'], sim_folder_path='', window_size=10
     output_df.to_csv('simulation_output/final_info/final_sim_analysis/sig_regions_df.csv')
     print(output_df)
 
+#compare binary and frequency population SNP windows
+def analyze_pop_windows():
+    #want to find regions where there are high/low frequencies and compare to overall snp count for the region
+    #read in frequencies
+    pop_snp_freqs = pd.read_csv('simulation_output/final_info/final_sim_analysis/population_mut_windows_frequency_100.csv', index_col=0, header=0).dropna()
+    #read in counts
+    pop_snp_counts = pd.read_csv('simulation_output/final_info/final_sim_analysis/population_mut_windows_binary_100.csv', index_col=0, header=0).dropna()
+    pop_snp_df = pd.concat([pop_snp_freqs, pop_snp_counts], axis=1)
+    pop_snp_df.columns = ['freqs','counts']
+
+    #analyze pop_snp_freqs distribution defining CI of 90%
+    freq_stats = pop_snp_freqs.describe([.05,.95])
+    #analyze pop_snp_counts distribution defining CI of 90%
+    count_stats = pop_snp_counts.describe([.05,.95])
+    #print(dist_stats)
+    #low_indices = pop_snp_df.loc[pop_snp_df['freqs']<=dist_stats.iloc[4,0]].index
+    #high_indices = pop_snp_df.loc[pop_snp_df['freqs']<=dist_stats.iloc[6,0]].index
+
+    #window size is 100, maybe check for regions where 100 consecutive nucleotides are extreme
+    #pd.DataFrame([[pop_snp_freqs.loc[low_indices], pop_snp_freqs.loc[high_indices]], [pop_snp_counts.loc[low_indices], pop_snp_counts.loc[high_indices]]]).to_excel('simulation_output/final_info/final_sim_analysis/population_comparison.xlsx')
+    sig_region_indices = pop_snp_df.loc[(pop_snp_df['freqs']<=freq_stats.iloc[4,0]) | (pop_snp_df['freqs']>=freq_stats.iloc[6,0])].index
+    window_size = 250
+    #check for gaps > window_size base pairs to seperate regions
+    region_positions = []
+    prev_pos = 0
+    for position in sig_region_indices:
+        if prev_pos == 0: #first region
+            region_positions.append([position])
+            prev_pos = position
+        else:
+            #check if position is far enough away from previous
+            if position > prev_pos + window_size: #this should be updated if working with multiple windows
+                #new window
+                region_positions[-1].append(prev_pos)
+                region_positions.append([position])
+            #update previous positon
+            prev_pos = position
+            #if looking at the final index, set final window to end at this position
+            if position == sig_region_indices[-1]:
+                region_positions[-1].append(position)
+
+    #calculate info about each region
+    #loop through sig low and sig high regions
+    output_df = pd.DataFrame(np.zeros([len(region_positions),7]), columns=['start','end','length','freq_high','freq_low','count_high','count_low'])
+    for reg_index, reg_pos in enumerate(region_positions):
+        sig_region_df = pop_snp_df.loc[reg_pos[0]-(window_size/2)+1:reg_pos[1]+(window_size/2)+1]
+        #print(sig_region_df)
+        output_df.loc[reg_index,'start'] = reg_pos[0] - (window_size/2) + 1 #reindexing to account for window size
+        output_df.loc[reg_index,'end'] = reg_pos[1] + (window_size/2) + 1
+        output_df.loc[reg_index,'length'] = sig_region_df.shape[0]
+        output_df.loc[reg_index,'freq_high'] = sig_region_df.loc[sig_region_df['freqs']>=freq_stats.iloc[6,0],'freqs'].count()
+        output_df.loc[reg_index,'freq_low'] = sig_region_df.loc[sig_region_df['freqs']<=freq_stats.iloc[4,0],'freqs'].count()
+        output_df.loc[reg_index,'count_high'] = sig_region_df.loc[sig_region_df['counts']>=count_stats.iloc[6,0],'counts'].count()
+        output_df.loc[reg_index,'count_low'] = sig_region_df.loc[sig_region_df['counts']<=count_stats.iloc[4,0],'counts'].count()
+    output_df = output_df.sort_values(by='start', ignore_index=True)
+    output_df.to_excel('simulation_output/final_info/final_sim_analysis/pop_sig_region_analysis.xlsx')
 
 #convert shared_muts mutation list into nucleotide-mutations.csv format
 #want to look at spectrum of unique mutations
@@ -1525,8 +1629,6 @@ def gen_context_count_matrix(fasta, positions):
                 triplet = fasta[index-1:index+2]
                 context_counts.loc[triplet[0]+'[X>Y]'+triplet[-1], triplet[1]] += 1
     return context_counts
-
-
 
 #analyze genome and gene context counts
 def analyze_genome_context_counts(sub_regions):
@@ -1624,7 +1726,6 @@ def vaccine_corr_updated(global_avg_subset_mat, variant_order):
                 output_df.loc[vaccine,variant] = corr
     output_df.to_csv('simulation_output/final_info/vaccine_corr_4_9_25.csv')
 
-
 #compare mutation rates for each gene
 def analyze_gene_mutation_frequencies(variant_order, gene_dict):
     '''
@@ -1634,7 +1735,7 @@ def analyze_gene_mutation_frequencies(variant_order, gene_dict):
     output_df = pd.DataFrame(np.zeros([2*len(variant_order)*3,len(gene_dict)]), index=pd.MultiIndex.from_product([['4fold','all'],variant_order,['low','med','high']]), columns=gene_dict.keys())
 
     #read in valid 4fold site positions
-    #valid_fsp = pd.read_csv('sim_ref_data/fourfold_gwtc/valid_fourfold_positions/total.csv', index_col=0, header=0, dtype=int).to_numpy().reshape(-1)
+    #valid_fsp = pd.read_csv('sim_ref_data/4fold/gwtc/valid_fourfold_positions/total.csv', index_col=0, header=0, dtype=int).to_numpy().reshape(-1)
 
     for var_index, variant in enumerate(variant_order):
         #read in reference mutations for variant
@@ -1648,7 +1749,7 @@ def analyze_gene_mutation_frequencies(variant_order, gene_dict):
 
                 for mut_type in ['all','4fold']:
                     if mut_type == '4fold':
-                        valid_fsp = pd.read_csv('sim_ref_data/fourfold_gwtc/valid_fourfold_positions/'+gene+'.csv', index_col=0, header=0, dtype=int).to_numpy().reshape(-1)
+                        valid_fsp = pd.read_csv('sim_ref_data/4fold/gwtc/valid_fourfold_positions/'+gene+'.csv', index_col=0, header=0, dtype=int).to_numpy().reshape(-1)
                         temp_ref_muts = gene_ref_muts.loc[gene_ref_muts['position'].isin(valid_fsp)]
                     else:
                         temp_ref_muts = gene_ref_muts
@@ -1665,7 +1766,7 @@ def analyze_gene_mutation_frequencies(variant_order, gene_dict):
 
                     for mut_type in ['all','4fold']:
                         if mut_type == '4fold':
-                            valid_fsp = pd.read_csv('sim_ref_data/fourfold_gwtc/valid_fourfold_positions/'+gene+'.csv', index_col=0, header=0, dtype=int).to_numpy().reshape(-1)
+                            valid_fsp = pd.read_csv('sim_ref_data/4fold/gwtc/valid_fourfold_positions/'+gene+'.csv', index_col=0, header=0, dtype=int).to_numpy().reshape(-1)
                             temp_ref_muts = gene_ref_muts.loc[gene_ref_muts['position'].isin(valid_fsp)]
                         else:
                             temp_ref_muts = gene_ref_muts
@@ -1692,7 +1793,6 @@ def analyze_gene_mutation_frequencies(variant_order, gene_dict):
                         output_df_2.loc[(mut_type,variant,mut_freq),gene] = output_df.loc[(mut_type,variants,mut_freq),gene]
     output_df_2.to_csv('simulation_output/final_info/gene_mut_frequency_analysis_ext.csv')
                     
-
 #look at triplet and context counts of introns
 def analyze_introns():
     #output dfs
@@ -1722,7 +1822,6 @@ def analyze_introns():
         fig, axs = plt.subplots(figsize=(3,4), layout='tight', dpi=200)
         sns.heatmap(mat, ax=axs, annot=False, cmap='Greys', linewidth=.5, linecolor='gray', xticklabels=columns_shortened_figs, yticklabels=rows_figs)
         plt.savefig('simulation_output/final_info/intron_analysis/'+type+'.png')
-
 
 #calculate context count matrices for each region in region_dict
 def calc_contexts_of_regions(regions_dict):
@@ -1837,7 +1936,6 @@ def gen_mutated_fasta(genes, collapse=False, gene_dict={}, variants=False):
 def gene_mut_frequency_analysis():
     number_of_sites = pd.read_excel('simulation_output/final_info/gene_mut_frequency_analysis.xlsx', sheet_name='Sheet1')
 
-
 #analyze WHO covid-19 cases and deaths dataset
 def analyze_who_data():
     who_df = pd.read_csv('WHO-COVID-19-global-data.csv', header=0)
@@ -1876,21 +1974,26 @@ def gen_gisaid_id_csv():
 
 #csv was taking too long to load the set so going to copy paste from text file
 def gen_gisaid_ids():
+    var_dict = {'alpha':'persistent_variants_1','delta':'persistent_variants_1','kraken':'persistent_variants_2','omicron':'persistent_variants_2','pirola':'persistent_variants_2',
+                'beta':'transient_variants_and_hk','epsilon':'transient_variants_and_hk','eta':'transient_variants_and_hk','gamma':'transient_variants_and_hk',
+                'iota':'transient_variants_and_hk','kappa':'transient_variants_and_hk','lambda':'transient_variants_and_hk','mu':'transient_variants_and_hk','hongkong':'transient_variants_and_hk'}
     if not os.path.exists('simulation_output/final_info/gisaid_ids'):
         os.mkdir('simulation_output/final_info/gisaid_ids')
     for variant_folder in [folder for folder in os.listdir('sim_ref_data') if '_full_clade' in folder]:
         if os.path.exists('sim_ref_data/'+variant_folder+'/details.txt'):
             with open('sim_ref_data/'+variant_folder+'/details.txt','r') as f:
-                    lines = f.readlines()
-                    lines = [line.strip() for line in lines]    
+                lines = f.readlines()
+                lines = [line.strip() for line in lines]    
             with open('simulation_output/final_info/gisaid_ids/'+re.search(r'\(\w+\)', variant_folder).group(0)[1:-1]+'.txt', 'w') as output:
-                    output.write(','.join(lines))
+                output.write(','.join(lines))
+            with open('simulation_output/final_info/gisaid_ids/'+var_dict[re.search(r'\(\w+\)', variant_folder).group(0)[1:-1]]+'.txt', 'a') as output:
+                output.write(','.join(lines))
 
 #plot lethal, nonlethal, and combined CDM matrices together
 def plot_cdm_types():
     fig, axs = plt.subplots(figsize=(24,8), dpi=250, layout='tight', ncols=3)
     for type_index, type in enumerate(['both', 'non-lethals', 'lethals']):
-        mat = pd.read_csv('sim_ref_data/j7(jean_total)_full_clade/thresholded_mutations/'+type+'_mut_rate_mat.csv', index_col=0, header=0).to_numpy()
+        mat = pd.read_csv('sim_ref_data/m6(mut_total)_full_clade/thresholded_mutations/'+type+'_mut_rate_mat.csv', index_col=0, header=0).to_numpy()
         cbar_formatter = ticker.ScalarFormatter()
         cbar_formatter.set_scientific(True)
         cbar_formatter.set_powerlimits((-1,1))
@@ -1967,7 +2070,7 @@ def gene_site_analysis(regions_dict, gene_info):
             series_list = [gene_series]
             for sub_region in ['NTD','RBD','SD1_2']:
                 gene_series = pd.Series(np.zeros([4]), index=['total_sites','4fold_sites','overlapping_4folds','analyzable_4folds'], name=sub_region)
-                valid_fourfold_positions = pd.read_csv('sim_ref_data/fourfold_gwtc/valid_fourfold_positions/'+sub_region+'.csv', index_col=0, header=0)
+                valid_fourfold_positions = pd.read_csv('sim_ref_data/4fold/gwtc/valid_fourfold_positions/'+sub_region+'.csv', index_col=0, header=0)
                 gene_series.loc['total_sites'] = regions_dict[sub_region][1] - regions_dict[sub_region][0]
                 gene_series.loc['4fold_sites'] = valid_fourfold_positions.shape[0]
                 gene_series.loc['analyzable_4folds'] = valid_fourfold_positions.shape[0]
@@ -1995,7 +2098,7 @@ def gene_site_analysis(regions_dict, gene_info):
             series_list = [gene_series]
             for sub_region in sub_regions:
                 gene_series = pd.Series(np.zeros([4]), index=['total_sites','4fold_sites','overlapping_4folds','analyzable_4folds'], name=sub_region)
-                valid_fourfold_positions = pd.read_csv('sim_ref_data/fourfold_gwtc/valid_fourfold_positions/'+sub_region+'.csv', index_col=0, header=0)
+                valid_fourfold_positions = pd.read_csv('sim_ref_data/4fold/gwtc/valid_fourfold_positions/'+sub_region+'.csv', index_col=0, header=0)
                 gene_series.loc['total_sites'] = regions_dict[sub_region][1] - regions_dict[sub_region][0]
                 gene_series.loc['4fold_sites'] = valid_fourfold_positions.shape[0]
                 gene_series.loc['overlapping_4folds'] = valid_fourfold_positions.to_numpy()[valid_fourfold_positions.isin(val_check)].shape[0]
@@ -2088,14 +2191,14 @@ def gen_sim_mut_count_fig():
     #positional matches
     pos_df = norm_sim_df.loc[('population','positional_matches'),5e-5]
     pos_df.index = np.arange(100,2100,100)
-    pos_df.columns = ['Naive', 'TSTV', 'Context-dependent']
+    pos_df.columns = ['tstv', 'TSTV', 'Context-dependent']
     sns.lineplot(pos_df, ax=axs[0])
     axs[0].set_xticks(np.arange(100,2100,100), np.arange(100,2100,100), rotation='vertical')
     axs[0].set_title('Positional Match Frequency')
     #contextual matches
     con_df = norm_sim_df.loc[('population','contextual_matches'),5e-5]
     con_df.index = np.arange(100,2100,100)
-    con_df.columns = ['Naive', 'TSTV', 'Context-dependent']
+    con_df.columns = ['tstv', 'TSTV', 'Context-dependent']
     sns.lineplot(con_df, ax=axs[1])
     axs[1].set_xticks(np.arange(100,2100,100), np.arange(100,2100,100), rotation='vertical')
     axs[1].set_title('Contextual Match Frequency')
@@ -2110,7 +2213,7 @@ def gen_sim_mut_count_fig():
     #positional performance per added mutation placed
     pos_df = norm_sim_df.loc[('population','positional_matches'),5e-1]
     pos_df.index = np.arange(100,2100,100)
-    pos_df.columns = ['Naive', 'TSTV', 'Context-dependent']
+    pos_df.columns = ['tstv', 'TSTV', 'Context-dependent']
     for mc_index, mut_count in enumerate(mut_counts):
         pos_df.loc[mut_count] = pos_df.loc[mut_count] / (mut_counts[mc_index]-mut_counts[mc_index-1])
     pos_df.drop([100], axis=0, inplace=True)
@@ -2120,7 +2223,7 @@ def gen_sim_mut_count_fig():
     #contextual matches
     con_df = norm_sim_df.loc[('population','contextual_matches'),5e-1]
     con_df.index = np.arange(100,2100,100)
-    con_df.columns = ['Naive', 'TSTV', 'Context-dependent']
+    con_df.columns = ['tstv', 'TSTV', 'Context-dependent']
     for mc_index, mut_count in enumerate(mut_counts):
         con_df.loc[mut_count] = con_df.loc[mut_count] / (mut_counts[mc_index]-mut_counts[mc_index-1])
     con_df.drop([100], axis=0, inplace=True)
@@ -2137,10 +2240,10 @@ def gen_sim_mut_thresholding_fig():
 
     mut_counts = np.arange(100,2100,100)
     mut_increases = (mut_counts - (mut_counts-100)) / mut_counts #how many muts added compared to previous mut count
-    updated_context_types = ['Naive', 'TSTV', 'Context-Dependent']
+    updated_context_types = ['tstv', 'TSTV', 'Context-Dependent']
     #create figure
     fig, axs = plt.subplots(figsize=(8,8), dpi=200, nrows=3, layout='tight')
-    for context_index, context_type in enumerate(['blind_contexts','naive_contexts','full_contexts']):
+    for context_index, context_type in enumerate(['naive_contexts','tstv_contexts','full_contexts']):
         pos_match_freq_df = sim_df.loc['positional_matches',(5e-05,context_type)] * mut_increases / mut_counts
         con_match_freq_df = sim_df.loc['contextual_matches',(5e-05,context_type)] * mut_increases / mut_counts
         plot_df = pd.concat([pos_match_freq_df, con_match_freq_df], axis=1)
@@ -2157,7 +2260,7 @@ def gen_sim_mut_thresholding_fig():
 #compare in vivo mutation rate contexts to find rates above and below 95% confidence interval
 def compare_vivo_rate_dist():
     #read in mut mat
-    total_df = pd.read_csv('sim_ref_data/j7(jean_total)_full_clade/thresholded_mutations/both_mut_rate_mat.csv', index_col=0, header=0)
+    total_df = pd.read_csv('sim_ref_data/m6(mut_total)_full_clade/thresholded_mutations/both_mut_rate_mat.csv', index_col=0, header=0)
     total_arr = total_df.to_numpy().reshape([-1])
     #calc confidence interval
     dist_stats = pd.Series(total_arr).describe([.025,.975])
